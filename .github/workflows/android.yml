@@ -1,0 +1,63 @@
+name: Android APK
+
+# APK для Android (arm64). При релизе (тег v*) вызывается из release.yml и прикладывается к релизу;
+# вручную (Run workflow) — собирается как артефакт.
+# Секреты: ANDROID_KEYSTORE_B64 (base64 от .jks), ANDROID_KEYSTORE_PASSWORD; псевдоним ключа — mcadmin.
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.ANDROID_KEYSTORE_B64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android
+      - run: npm ci
+      - name: Ключ подписи
+        if: ${{ env.HAS_KEY == 'true' }}
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          echo "$KS" | base64 -d > "$RUNNER_TEMP/mc-admin-mobile.jks"
+          printf 'storeFile=%s\npassword=%s\nkeyAlias=mcadmin\n' "$RUNNER_TEMP/mc-admin-mobile.jks" "$PW" > mobile/src-tauri/gen/android/keystore.properties
+      - name: Сборка APK
+        env:
+          TAURI_APP_PATH: mobile/src-tauri
+        run: |
+          export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          npx tauri android build --target aarch64 --apk
+      - name: Артефакт
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: mobile/src-tauri/gen/android/app/build/outputs/apk/arm64/release/*.apk
+      - name: Публикация
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          v=$(node -p "require('./mobile/src-tauri/tauri.conf.json').version")
+          apk="MCAdminMobile-$v.apk"
+          cp mobile/src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk "$apk"
+          gh release upload "$GITHUB_REF_NAME" "$apk" --clobber
+          gh release view "$GITHUB_REF_NAME" --json body -q .body > notes.md
+          grep -q "$apk" notes.md || { printf '\n**%s** — приложение-компаньон для Android (arm64): серверы, консоль, статистика и уведомления с телефона.\n' "$apk" >> notes.md; gh release edit "$GITHUB_REF_NAME" --notes-file notes.md; }

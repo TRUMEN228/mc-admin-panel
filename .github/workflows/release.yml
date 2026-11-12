@@ -35,3 +35,9 @@ jobs:
           v="${GITHUB_REF_NAME#v}"
           gh release create "$GITHUB_REF_NAME" release/panel/* --title "MC Admin Panel $v" --latest --notes "**MCAdminPanel-$v-Setup.exe** — установщик, обновляется автоматически.
           **MCAdminPanel-$v-Portable.exe** — без установки, данные хранятся рядом с exe."
+
+
+  android:
+    needs: release
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
