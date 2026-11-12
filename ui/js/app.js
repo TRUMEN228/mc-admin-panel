@@ -517,7 +517,12 @@ async function saveCfKey() {
   const k = $('#cf-key').value.trim(); if (!k) return;
   S.settings = await api('settings.save', { curseforgeKey: k });
   const r = await call('catalog.search', { provider: 'curseforge', q: '', mc: searchCtx.mc, loader: searchCtx.loader, type: searchCtx.type }).catch((e) => e);
-  if (r instanceof Error) { toast(r.message, 'error'); S.settings = await api('settings.save', { curseforgeKey: '' }); return doSearch(); }
+  if (r instanceof Error) {
+    // стираем ключ, только если CurseForge его действительно отклонил; иначе показываем причину
+    if (/отклонил/.test(r.message)) { S.settings = await api('settings.save', { curseforgeKey: '' }); toast('CurseForge отклонил ключ — проверьте, что скопирован ключ целиком (начинается с $2a$10$)', 'error'); }
+    else toast(`Ключ сохранён, но поиск не удался: ${r.message}`, 'error');
+    return doSearch();
+  }
   toast('Ключ CurseForge сохранён'); doSearch();
 }
 async function doSearch(more = false) {

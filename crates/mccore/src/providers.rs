@@ -47,13 +47,19 @@ async fn cf_get(path: &str) -> Res<Value> {
     let key = cf_key();
     if key.is_empty() { crate::bail!("Для CurseForge нужен API-ключ — укажите его в настройках"); }
     let r = http::client().get(format!("{CF}{path}")).header("x-api-key", key).send().await.map_err(|e| format!("Сеть: {e}"))?;
-    if r.status().as_u16() == 403 { crate::bail!("CurseForge отклонил API-ключ"); }
-    if !r.status().is_success() { crate::bail!("CurseForge: HTTP {}", r.status().as_u16()); }
-    r.json().await.ctx("CurseForge")
+    cf_resp(r).await
 }
 async fn cf_post(path: &str, body: &Value) -> Res<Value> {
     let r = http::client().post(format!("{CF}{path}")).header("x-api-key", cf_key()).json(body).send().await.map_err(|e| format!("Сеть: {e}"))?;
-    if !r.status().is_success() { crate::bail!("CurseForge: HTTP {}", r.status().as_u16()); }
+    cf_resp(r).await
+}
+async fn cf_resp(r: reqwest::Response) -> Res<Value> {
+    let st = r.status().as_u16();
+    if st == 401 || st == 403 { crate::bail!("CurseForge отклонил API-ключ (HTTP {st})"); }
+    if !(200..300).contains(&st) {
+        let body = r.text().await.unwrap_or_default();
+        crate::bail!("CurseForge: HTTP {st} {}", body.chars().take(200).collect::<String>());
+    }
     r.json().await.ctx("CurseForge")
 }
 
