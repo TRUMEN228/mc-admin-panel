@@ -387,6 +387,7 @@ pub fn system_info() -> Value {
         "dataDir": crate::core::DATA.to_string_lossy(),
         "mica": native::mica_supported(),
         "debug": cfg!(debug_assertions),
+        "portable": crate::core::PORTABLE.is_some(),
     })
 }
 

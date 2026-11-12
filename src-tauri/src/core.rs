@@ -43,14 +43,24 @@ fn radix36(mut n: u64) -> String {
 // ---------- пути ----------
 // Данные панели — %APPDATA%\MC Admin Panel (совместимо с прежней Electron-версией),
 // серверы и бэкапы по умолчанию — Документы\MC Servers.
-// MCPANEL_DATA позволяет запустить панель с отдельной папкой данных (тесты, портативный режим).
+/// Портативный режим: exe называется «…Portable.exe» (или рядом лежит файл `portable`).
+/// Всё — данные, Java, серверы, бэкапы — хранится в папке «MC Admin Panel Data» рядом с exe.
+pub static PORTABLE: Lazy<Option<PathBuf>> = Lazy::new(|| {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.to_path_buf();
+    let by_name = exe.file_stem()?.to_string_lossy().to_lowercase().contains("portable");
+    (by_name || dir.join("portable").exists()).then(|| dir.join("MC Admin Panel Data"))
+});
+// MCPANEL_DATA позволяет запустить панель с отдельной папкой данных (тесты).
 pub static DATA: Lazy<PathBuf> = Lazy::new(|| {
     let d = std::env::var_os("MCPANEL_DATA").map(PathBuf::from)
+        .or_else(|| PORTABLE.as_ref().map(|p| p.join("data")))
         .unwrap_or_else(|| dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("MC Admin Panel"));
     let _ = std::fs::create_dir_all(&d);
     d
 });
 pub static HOME: Lazy<PathBuf> = Lazy::new(|| {
+    if let Some(p) = PORTABLE.as_ref() { return p.clone(); }
     dirs::document_dir().or_else(dirs::home_dir).unwrap_or_else(|| PathBuf::from(".")).join("MC Servers")
 });
 

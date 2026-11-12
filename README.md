@@ -4,9 +4,11 @@
 Вместо Chromium используется системный WebView2. Встроенного веб-сервера нет: интерфейс общается с ядром на Rust напрямую через IPC.
 
 ## Установка
-Запустите `src-tauri/target/release/bundle/nsis/MC Admin Panel_2.0.0_x64-setup.exe`.
-- Данные панели: `%APPDATA%\MC Admin Panel`. Данные прежней Electron-версии подхватываются автоматически.
-- Серверы и бэкапы по умолчанию: `Документы\MC Servers` (меняется в настройках).
+Команда `npm run release` собирает в папку `release/` два файла:
+- **`MC Admin Panel 2.0.0 Setup.exe`** — установщик. Данные панели хранятся в `%APPDATA%\MC Admin Panel` (данные прежней Electron-версии подхватываются автоматически), серверы и бэкапы по умолчанию — в `Документы\MC Servers`.
+- **`MC Admin Panel 2.0.0 Portable.exe`** — портативная версия без установки. Всё (настройки, Java, серверы, бэкапы) хранится в папке `MC Admin Panel Data` рядом с exe, так что панель можно переносить на флешке. Режим включается словом «Portable» в имени файла.
+
+Обеим версиям нужен WebView2, он уже есть в Windows 10/11. Установщик при отсутствии WebView2 докачает его сам.
 
 ## Возможности
 - **Создание сервера**: Vanilla, Paper, Fabric, Forge, NeoForge, любая версия Minecraft, включая снапшоты. Панель сама скачивает нужную Java (Adoptium), запускает установщики и принимает EULA.
@@ -28,6 +30,7 @@
 npm install
 npm run dev        # запуск приложения
 npm run build      # релизная сборка и установщик NSIS
+npm run release    # установщик + портативный exe в release/
 ```
 - `ui/` — интерфейс (HTML/CSS/JS без сборщика).
 - `src-tauri/src/` — ядро: `servers.rs` (процессы, мониторинг), `installer.rs` (версии, Java, установка), `backups.rs`, `mods.rs` (Modrinth, наборы), `importer.rs`, `native.rs` (трей, окно, уведомления), `web.rs` (веб-доступ), `api.rs` (команды UI).

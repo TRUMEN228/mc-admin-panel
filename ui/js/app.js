@@ -729,7 +729,7 @@ async function pSettings() {
     </div>
     <div class="row" style="margin:16px 0"><button class="primary" style="height:38px;padding:0 22px" onclick="saveSettings()">${ic('save')}Сохранить настройки</button></div>
     <div class="set-group-title">О программе</div><div class="set-list">
-      ${item('cube', 'MC Admin Panel ' + esc(S.info.version || ''), 'Нативное приложение на Tauri и Rust', '', true)}
+      ${item('cube', 'MC Admin Panel ' + esc(S.info.version || ''), S.info.portable ? 'Портативная версия — все данные хранятся рядом с программой' : 'Нативное приложение на Tauri и Rust', '', true)}
       ${NATIVE ? item('folder', 'Данные панели', esc(S.info.dataDir || ''), `<button class="sm" onclick="native.openPath(${attr(S.info.dataDir || '')})">${ic('external')}Открыть</button>`, true) : ''}
     </div></div>`);
   $$('#st-theme button').forEach((b) => (b.onclick = async () => {
