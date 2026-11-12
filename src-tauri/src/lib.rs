@@ -4,17 +4,14 @@ pub mod backups;
 pub mod core;
 pub mod diagnose;
 pub mod files;
-pub mod http;
 pub mod importer;
 pub mod installer;
-pub mod modmeta;
-pub mod modpack;
 pub mod mods;
 pub mod native;
 pub mod network;
-pub mod providers;
 pub mod servers;
 pub mod web;
+pub use mccore::{http, modmeta, modpack, providers};
 
 use std::sync::atomic::Ordering;
 use tauri::{Manager, RunEvent, WindowEvent};
@@ -39,6 +36,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![api::call, native::ui_ready, web_status])
         .setup(|app| {
             let _ = core::APP.set(app.handle().clone());
+            core::sync_mccore();
+            core::SETTINGS_HOOKS.lock().push(Box::new(core::sync_mccore));
             if let Some(w) = app.get_webview_window("main") { native::setup_window(&w); }
             native::init_listeners();
             native::setup_tray(app.handle())?;

@@ -101,6 +101,8 @@ pub async fn dispatch(cmd: &str, a: Value, web: bool) -> Res<Value> {
         "sets.upload" => { mods::upload_set_file(&id, &s("name"), &s("data"))?; ok() }
         "sets.apply" => Ok(json!({ "message": mods::apply_set(&id).await? })),
         "sets.import" => importer::import_sets(&s("path")),
+        "sets.importPack" => mods::import_pack_as_set(&s("path")),
+        "servers.installPack" => mods::install_pack_to_server(&id, &s("path")),
         "sets.dir" => Ok(json!(mods::set_dir(&id))),
 
         _ => Err(format!("Неизвестная команда: {cmd}")),

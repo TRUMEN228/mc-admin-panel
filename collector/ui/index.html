@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MC Mod Collector</title>
+<link rel="stylesheet" href="css/app.css">
+<style>
+  .logo { background: linear-gradient(140deg, #8b5cf6, #2563eb); box-shadow: 0 4px 14px rgba(99, 102, 241, .35), inset 0 1px 0 rgba(255,255,255,.25); }
+  .pack-card { display: flex; flex-direction: column; gap: 12px; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+  .pack-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow); }
+  .pack-icons { display: flex; gap: 4px; min-height: 28px; }
+  .pack-icons img { width: 28px; height: 28px; border-radius: 7px; background: var(--card-2); }
+  .side-chip { cursor: pointer; user-select: none; }
+  .side-chip.off { opacity: .35; text-decoration: line-through; }
+  .list-item.incompatible { background: var(--red-soft); }
+  .in-pack { color: var(--accent-fg); }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="logo"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
+      <div class="brand-text"><b>MC Mod Collector</b><span>сборки модов</span></div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="side-foot" id="side-foot"></div>
+  </aside>
+  <main class="content">
+    <header class="topbar" id="topbar"></header>
+    <div class="page" id="page"></div>
+  </main>
+</div>
+<div class="toasts" id="toasts"></div>
+<div class="jobs" id="jobs"></div>
+<script src="js/devshim.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

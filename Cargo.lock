@@ -2320,13 +2320,14 @@ checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
 name = "mc-admin-panel"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
  "dirs 6.0.0",
  "futures-util",
+ "mccore",
  "once_cell",
  "parking_lot",
  "regex",
@@ -2347,6 +2348,51 @@ dependencies = [
  "tokio",
  "urlencoding",
  "walkdir",
+ "zip 2.6.1",
+]
+
+[[package]]
+name = "mc-mod-collector"
+version = "1.0.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "dirs 6.0.0",
+ "futures-util",
+ "mccore",
+ "once_cell",
+ "parking_lot",
+ "regex",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tauri-plugin-process",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "tokio",
+ "urlencoding",
+]
+
+[[package]]
+name = "mccore"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "futures-util",
+ "hex",
+ "once_cell",
+ "parking_lot",
+ "regex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha1_smol",
+ "sha2",
+ "tokio",
+ "urlencoding",
  "zip 2.6.1",
 ]
 

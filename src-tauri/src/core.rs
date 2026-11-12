@@ -10,16 +10,16 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 
-pub type Res<T> = Result<T, String>;
+pub use mccore::{Ctx, Res};
 
-/// Превращает любую ошибку в строку для фронтенда.
-pub trait Ctx<T> {
-    fn ctx(self, what: &str) -> Res<T>;
-}
-impl<T, E: std::fmt::Display> Ctx<T> for Result<T, E> {
-    fn ctx(self, what: &str) -> Res<T> {
-        self.map_err(|e| if what.is_empty() { e.to_string() } else { format!("{what}: {e}") })
-    }
+/// Передаёт настройки панели (прокси, ключ CurseForge) общей библиотеке.
+pub fn sync_mccore() {
+    mccore::configure(mccore::Config {
+        proxy: set_str("proxy"),
+        curseforge_key: set_str("curseforgeKey"),
+        tmp_dir: DATA.join("tmp"),
+        user_agent: concat!("mc-admin-panel/", env!("CARGO_PKG_VERSION")).into(),
+    });
 }
 #[macro_export]
 macro_rules! bail { ($($t:tt)*) => { return Err(format!($($t)*)) }; }

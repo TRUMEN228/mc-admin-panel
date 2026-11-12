@@ -1,6 +1,6 @@
 //! Превью установленных модов и плагинов: название, версия, описание и иконка
 //! из самого .jar (fabric/quilt/forge/neoforge/bukkit), иначе — с Modrinth по хешу.
-use crate::core::{self, Res};
+use crate::{self as core, Res};
 use crate::http;
 use base64::Engine;
 use once_cell::sync::Lazy;

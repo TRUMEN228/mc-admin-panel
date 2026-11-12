@@ -462,6 +462,7 @@ async function tMods(s) {
   const plugin = s.loader === 'paper', what = plugin ? 'Плагины' : 'Моды';
   $('#tab').innerHTML = `<div class="grid g2 fx-row"><div class="card fx-card drop-zone" data-drop="mods">
       <div class="card-head"><h3>${what} <span class="count">${list.length}</span></h3>
+        <button class="sm" title="Поставить сборку .mrpack (например, из MC Mod Collector)" onclick="installPackToServer('${s.id}')">${ic('layers')}Сборка</button>
         <button class="sm" id="upd-btn" onclick="checkUpdates('mods','${s.id}')">${ic('refresh')}Обновления</button><button class="sm" onclick="pickJars('mods')">${ic('upload')}Добавить .jar</button><button class="sm ghost icon" title="Открыть папку" onclick="native.openPath(${attr(dir)})">${ic('folder')}</button></div>
       ${list.length > 6 ? `<div class="input-icon" style="margin-bottom:8px">${ic('search')}<input placeholder="Фильтр…" oninput="$$('#modlist .list-item').forEach(r=>r.hidden=!r.dataset.f.includes(this.value.toLowerCase()))"></div>` : ''}
       <div class="scroll" id="modlist">${modList(list, 'mods', s.id)}</div>
@@ -923,7 +924,7 @@ async function pSets(id) {
   const set = S.sets.find((x) => x.id === id) || S.sets[0];
   cur.setId = set?.id;
   const modServers = S.servers.filter((s) => !['vanilla', 'paper'].includes(s.loader));
-  setTop({ title: 'Наборы модов клиента', actions: `<button onclick="importDir('sets')">${ic('import')}Импорт папки</button>
+  setTop({ title: 'Наборы модов клиента', actions: `<button onclick="importDir('sets')">${ic('import')}Импорт папки</button><button onclick="importPackSet()">${ic('layers')}Сборка .mrpack</button>
     ${modServers.length ? `<select style="width:auto" onchange="this.value&&fromServer(this.value);this.value=''"><option value="">Из модов сервера…</option>${modServers.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>` : ''}
     <button class="primary" onclick="newSet()">${ic('plus')}Новый набор</button>` });
   const vers = await call('versions', {}).catch(() => []);
@@ -966,6 +967,32 @@ async function fromServer(sid) {
   const r = await api('sets.fromServer', { id: sid });
   if (r.skipped.length) alertDialog('Эти моды работают только на сервере и не добавлены в набор:\n\n' + r.skipped.join('\n'), 'Пропущены серверные моды');
   go('sets/' + r.set.id);
+}
+
+// ---------- сборки .mrpack (например, от MC Mod Collector) ----------
+async function pickPack() {
+  return NATIVE ? T.dialog.open({ filters: [{ name: 'Сборка Modrinth', extensions: ['mrpack'] }], title: 'Сборка .mrpack' })
+    : promptDialog({ title: 'Сборка', label: 'Путь к файлу .mrpack на компьютере с панелью' });
+}
+async function packInfo(path) { return api('pack.inspect', { path }); }
+async function importPackSet() {
+  const f = await pickPack(); if (!f) return;
+  const p = await packInfo(f).catch(() => null); if (!p) return;
+  if (!(await confirmDialog(`«${p.name}» ${p.version || ''}\n${loaderName(p.loader)} ${p.loaderVersion} · Minecraft ${p.mc}\nМодов для клиента: ${p.clientFiles}`, { title: 'Создать набор из сборки?', ok: 'Создать набор', icon: 'layers' }))) return;
+  const r = await api('sets.importPack', { path: f }); go('sets/' + r.set.id);
+}
+async function installPackToServer(id) {
+  const s = srvById(id);
+  if (s.status !== 'stopped') return toast('Сначала остановите сервер', 'error');
+  const f = await pickPack(); if (!f) return;
+  const p = await packInfo(f).catch(() => null); if (!p) return;
+  if (p.loader !== s.loader || p.mc !== s.mcVersion) {
+    const make = await confirmDialog(`Сборка «${p.name}» для ${loaderName(p.loader)} ${p.mc}, а сервер — ${loaderName(s.loader)} ${s.mcVersion}.\n\nСоздать для неё новый сервер?`, { title: 'Версии не совпадают', ok: 'Новый сервер из сборки' });
+    if (make) { C.mode = 'pack'; C.pack = p; go('create'); }
+    return;
+  }
+  if (!(await confirmDialog(`На сервер «${s.name}» будут скачаны серверные моды сборки «${p.name}» (${p.serverFiles}) и её настройки. Уже установленные моды останутся.`, { title: 'Установить сборку?', ok: 'Установить', icon: 'layers' }))) return;
+  api('servers.installPack', { id, path: f }).catch(() => {});
 }
 
 // ---------- импорт ----------

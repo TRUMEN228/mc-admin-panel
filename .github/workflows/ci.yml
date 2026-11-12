@@ -16,10 +16,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: .
       - name: Синтаксис интерфейса
         shell: bash
-        run: for f in ui/js/*.js; do node --check "$f"; done
+        run: for f in ui/js/*.js collector/ui/js/*.js; do node --check "$f"; done
       - name: Тесты Rust
-        working-directory: src-tauri
-        run: cargo test --lib
+        run: cargo test --workspace --lib

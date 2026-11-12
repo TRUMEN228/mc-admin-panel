@@ -1,0 +1,41 @@
+name: Релиз сборщика модов
+
+# Тег collector-vX.Y.Z (версия = collector/src-tauri/tauri.conf.json).
+# Релиз не помечается «последним», чтобы не мешать автообновлению панели;
+# файл обновлений сборщика лежит в постоянном релизе collector-latest.
+on:
+  push:
+    tags: ['collector-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+      - name: Сборка
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          RELEASE_NOTES: Обновление MC Mod Collector. Подробности — на странице релиза.
+        run: node scripts/release.mjs collector
+      - name: Публикация
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          v="${GITHUB_REF_NAME#collector-v}"
+          gh release create "$GITHUB_REF_NAME" release/collector/* --title "MC Mod Collector $v" --latest=false --notes "Приложение для подбора модов в сборку.
+          **MCModCollector-$v-Setup.exe** — установщик, обновляется автоматически.
+          **MCModCollector-$v-Portable.exe** — без установки.
+          Готовую сборку (.mrpack) можно поставить на сервер и клиент через MC Admin Panel."
+          gh release view collector-latest >/dev/null 2>&1 || gh release create collector-latest --prerelease --latest=false --title "MC Mod Collector — файл обновлений" --notes "Служебный релиз: latest.json для автообновления MC Mod Collector."
+          gh release upload collector-latest release/collector/latest.json --clobber

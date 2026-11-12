@@ -1,5 +1,5 @@
 //! HTTP-клиент с поддержкой прокси (в т.ч. системного прокси Windows).
-use crate::core::{set_str, Ctx, Res};
+use crate::{Ctx, Res};
 use futures_util::StreamExt;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -8,7 +8,6 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 
-const UA: &str = concat!("mc-admin-panel/", env!("CARGO_PKG_VERSION"));
 
 /// Системный прокси Windows (Настройки → Сеть → Прокси): его выставляют v2rayN, Clash и т.п.
 fn windows_proxy() -> String {
@@ -37,7 +36,7 @@ fn windows_proxy() -> String {
 }
 
 pub fn proxy_url() -> String {
-    let p = set_str("proxy");
+    let p = crate::config().proxy;
     if p == "auto" {
         for k in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"] {
             if let Ok(v) = std::env::var(k) { if !v.is_empty() { return v; } }
@@ -52,7 +51,7 @@ pub fn client() -> reqwest::Client {
     let p = proxy_url();
     let mut c = CLIENT.lock();
     if let Some((k, cl)) = &*c { if *k == p { return cl.clone(); } }
-    let mut b = reqwest::Client::builder().user_agent(UA).connect_timeout(Duration::from_secs(20)).no_proxy();
+    let mut b = reqwest::Client::builder().user_agent(crate::config().user_agent).connect_timeout(Duration::from_secs(20)).no_proxy();
     if !p.is_empty() { if let Ok(px) = reqwest::Proxy::all(&p) { b = b.proxy(px); } }
     let cl = b.build().expect("http client");
     *c = Some((p, cl.clone()));

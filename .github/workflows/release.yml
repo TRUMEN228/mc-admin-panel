@@ -1,7 +1,6 @@
-name: Релиз
+name: Релиз панели
 
-# Создайте тег vX.Y.Z (версия должна совпадать с tauri.conf.json) — Actions соберёт
-# установщик, файл обновлений latest.json и портативный exe и опубликует релиз.
+# Тег vX.Y.Z (версия = src-tauri/tauri.conf.json) → установщик, портативный exe и latest.json.
 on:
   push:
     tags: ['v*']
@@ -19,32 +18,20 @@ jobs:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
       - run: npm ci
       - name: Тесты
-        working-directory: src-tauri
-        run: cargo test --lib
-      - name: Сборка и публикация
-        uses: tauri-apps/tauri-action@v0
+        run: cargo test -p mc-admin-panel --lib
+      - name: Сборка
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: MC Admin Panel __VERSION__
-          releaseBody: |
-            **MC Admin Panel __VERSION__ Setup.exe** — установщик, обновляется автоматически.
-            **MC Admin Panel __VERSION__ Portable.exe** — без установки, данные хранятся рядом с exe.
-          releaseDraft: false
-          prerelease: false
-          includeUpdaterJson: true
-      - name: Портативная версия
+          RELEASE_NOTES: Обновление MC Admin Panel. Подробности — на странице релиза.
+        run: node scripts/release.mjs panel
+      - name: Публикация
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           v="${GITHUB_REF_NAME#v}"
-          cp src-tauri/target/release/mc-admin-panel.exe "MC Admin Panel $v Portable.exe"
-          gh release upload "$GITHUB_REF_NAME" "MC Admin Panel $v Portable.exe" --clobber
+          gh release create "$GITHUB_REF_NAME" release/panel/* --title "MC Admin Panel $v" --latest --notes "**MCAdminPanel-$v-Setup.exe** — установщик, обновляется автоматически.
+          **MCAdminPanel-$v-Portable.exe** — без установки, данные хранятся рядом с exe."

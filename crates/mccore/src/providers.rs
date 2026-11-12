@@ -1,6 +1,6 @@
 //! Каталоги модов и плагинов: Modrinth, CurseForge, Hangar (PaperMC), Spigot (Spiget).
 //! Поиск, установка с зависимостями, проверка и установка обновлений.
-use crate::core::{self, Ctx, Res};
+use crate::{self as core, Ctx, Res};
 use crate::http;
 use futures_util::future::BoxFuture;
 use parking_lot::Mutex;
@@ -15,7 +15,7 @@ const HANGAR: &str = "https://hangar.papermc.io/api/v1";
 const SPIGET: &str = "https://api.spiget.org/v2";
 
 fn enc(v: &Value) -> String { urlencoding::encode(&v.to_string()).into_owned() }
-fn cf_key() -> String { core::set_str("curseforgeKey").trim().to_string() }
+fn cf_key() -> String { crate::config().curseforge_key.trim().to_string() }
 fn is_plugin(loader: &str) -> bool { loader == "paper" }
 
 /// Доступные каталоги для ядра.
@@ -142,7 +142,7 @@ async fn mr_version(pid: &str, mc: &str, loader: &str) -> Res<Value> {
     let ls = mr_loaders(loader);
     if !ls.is_empty() { q += &format!("&loaders={}", enc(&json!(ls))); }
     let vers = http::get_json(&format!("{MR}/project/{pid}/version{q}")).await?;
-    vers.get(0).cloned().ok_or(format!("Нет версии для {} {mc}", crate::installer::loader_title(loader)))
+    vers.get(0).cloned().ok_or(format!("Нет версии для {} {mc}", crate::loader_title(loader)))
 }
 fn mr_install(pid: String, mc: String, loader: String, dir: PathBuf, done: Done) -> BoxFuture<'static, Res<Vec<String>>> {
     Box::pin(async move {
@@ -373,4 +373,97 @@ pub async fn details(provider: &str, id: &str) -> Res<Value> {
                 "client": p["client_side"], "server": p["server_side"], "versions": p["game_versions"].as_array().map(|a| a.iter().rev().take(6).cloned().collect::<Vec<_>>()) }))
         }
     }
+}
+
+// ---------- описание мода для сборок (без скачивания) ----------
+fn side(v: &Value) -> Value { match v.as_str() { Some("unsupported") => json!("unsupported"), Some("optional") => json!("optional"), _ => json!("required") } }
+
+fn mr_entry(proj: &Value, v: &Value, dep: bool) -> Res<Value> {
+    let files = v["files"].as_array().cloned().unwrap_or_default();
+    let f = files.iter().find(|x| x["primary"] == true).or(files.first()).ok_or("Нет файлов")?;
+    Ok(json!({
+        "source": "modrinth", "project": proj["id"], "versionId": v["id"], "version": v["version_number"],
+        "name": proj["title"], "icon": proj["icon_url"], "desc": proj["description"],
+        "page": format!("https://modrinth.com/{}/{}", proj["project_type"].as_str().unwrap_or("mod"), proj["slug"].as_str().unwrap_or("")),
+        "client": side(&proj["client_side"]), "server": side(&proj["server_side"]), "dependency": dep,
+        "file": { "name": f["filename"], "url": f["url"], "sha1": f["hashes"]["sha1"], "sha512": f["hashes"]["sha512"], "size": f["size"] },
+    }))
+}
+fn cf_sha1(f: &Value) -> Value {
+    f["hashes"].as_array().and_then(|a| a.iter().find(|h| h["algo"] == 1)).map(|h| h["value"].clone()).unwrap_or(Value::Null)
+}
+fn cf_entry(m: &Value, f: &Value, dep: bool) -> Value {
+    // CurseForge помечает файлы тегами «Client»/«Server»; если тегов нет — нужен обеим сторонам
+    let gv: Vec<&str> = f["gameVersions"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect()).unwrap_or_default();
+    let (c, s) = (gv.contains(&"Client"), gv.contains(&"Server"));
+    let (client, server) = match (c, s) { (true, false) => ("required", "unsupported"), (false, true) => ("unsupported", "required"), _ => ("required", "required") };
+    json!({
+        "source": "curseforge", "project": m["id"].to_string(), "versionId": f["id"].to_string(), "version": f["displayName"],
+        "name": m["name"], "icon": m["logo"]["thumbnailUrl"], "desc": m["summary"], "page": m["links"]["websiteUrl"],
+        "client": client, "server": server, "dependency": dep,
+        "file": { "name": f["fileName"], "url": cf_url(f), "sha1": cf_sha1(f), "sha512": null, "size": f["fileLength"] },
+    })
+}
+
+/// Подходящая версия мода и (по желанию) все обязательные зависимости.
+pub async fn resolve(provider: &str, pid: &str, mc: &str, loader: &str, with_deps: bool) -> Res<Vec<Value>> {
+    let done: Done = Default::default();
+    match provider {
+        "curseforge" => cf_resolve(pid.into(), mc.into(), loader.into(), with_deps, false, done).await,
+        "modrinth" => mr_resolve(pid.into(), mc.into(), loader.into(), with_deps, false, done).await,
+        p => crate::bail!("Каталог {p} не поддерживается в сборках"),
+    }
+}
+fn mr_resolve(pid: String, mc: String, loader: String, deps: bool, dep: bool, done: Done) -> BoxFuture<'static, Res<Vec<Value>>> {
+    Box::pin(async move {
+        if !done.lock().insert(pid.clone()) { return Ok(vec![]); }
+        let proj = http::get_json(&format!("{MR}/project/{pid}")).await?;
+        let v = mr_version(&pid, &mc, &loader).await.map_err(|e| format!("{}: {e}", proj["title"].as_str().unwrap_or(&pid)))?;
+        let mut out = vec![mr_entry(&proj, &v, dep)?];
+        if deps {
+            for d in v["dependencies"].as_array().cloned().unwrap_or_default() {
+                if d["dependency_type"] == "required" {
+                    if let Some(p) = d["project_id"].as_str() {
+                        if let Ok(more) = mr_resolve(p.into(), mc.clone(), loader.clone(), true, true, done.clone()).await { out.extend(more); }
+                    }
+                }
+            }
+        }
+        Ok(out)
+    })
+}
+fn cf_resolve(pid: String, mc: String, loader: String, deps: bool, dep: bool, done: Done) -> BoxFuture<'static, Res<Vec<Value>>> {
+    Box::pin(async move {
+        if !done.lock().insert(pid.clone()) { return Ok(vec![]); }
+        let m = cf_get(&format!("/mods/{pid}")).await?["data"].clone();
+        let f = cf_file(&pid, &mc, &loader).await.map_err(|e| format!("{}: {e}", m["name"].as_str().unwrap_or(&pid)))?;
+        let mut out = vec![cf_entry(&m, &f, dep)];
+        if deps {
+            for d in f["dependencies"].as_array().cloned().unwrap_or_default() {
+                if d["relationType"] == 3 {
+                    if let Ok(more) = cf_resolve(d["modId"].to_string(), mc.clone(), loader.clone(), true, true, done.clone()).await { out.extend(more); }
+                }
+            }
+        }
+        Ok(out)
+    })
+}
+
+/// Опознаёт .jar по содержимому: Modrinth по SHA-1, затем CurseForge по отпечатку.
+pub async fn identify(bytes: &[u8]) -> Option<Value> {
+    let sha1 = sha1_smol::Sha1::from(bytes).digest().to_string();
+    if let Ok(v) = http::get_json(&format!("{MR}/version_file/{sha1}?algorithm=sha1")).await {
+        if let Some(pid) = v["project_id"].as_str() {
+            if let Ok(proj) = http::get_json(&format!("{MR}/project/{pid}")).await { return mr_entry(&proj, &v, false).ok(); }
+        }
+    }
+    if !cf_key().is_empty() {
+        if let Ok(r) = cf_post("/fingerprints/432", &json!({ "fingerprints": [murmur2_cf(bytes)] })).await {
+            if let Some(m) = r["data"]["exactMatches"].get(0) {
+                let f = &m["file"];
+                if let Ok(md) = cf_get(&format!("/mods/{}", m["id"])).await { return Some(cf_entry(&md["data"], f, false)); }
+            }
+        }
+    }
+    None
 }

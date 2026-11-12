@@ -234,3 +234,53 @@ pub async fn apply_updates(kind: &str, id: &str, list: &Value) -> Res<Value> {
     }
     Ok(json!({ "updated": ok, "failed": failed }))
 }
+
+// ---------- сборки .mrpack (например, от MC Mod Collector) ----------
+/// Новый набор клиента из сборки: только моды для клиента.
+pub fn import_pack_as_set(path: &str) -> Res<Value> {
+    let p = crate::modpack::read(std::path::Path::new(path))?;
+    let set = create_set(&json!({ "name": p.name, "mcVersion": p.mc, "loader": p.loader, "loaderVersion": p.loader_version }))?;
+    let job = crate::core::Job::new(format!("Набор «{}» из сборки", p.name));
+    let (jid, sid) = (job.id, set.id.clone());
+    tauri::async_runtime::spawn(async move {
+        let dir = set_dir(&sid);
+        let r = crate::modpack::install_files(&p, "client", &dir, true, &|t, pr| job.step(t, pr), 0.0, 90.0).await;
+        // локальные .jar из overrides/mods
+        let r = match r {
+            Ok(n) => {
+                let tmp = DATA.join("tmp").join(format!("ov-{sid}"));
+                let _ = crate::modpack::extract_overrides(&p, &tmp, false).await;
+                let mut extra = 0;
+                for f in core::ls(&tmp.join("mods")) { if std::fs::copy(tmp.join("mods").join(&f), dir.join(&f)).is_ok() { extra += 1; } }
+                let _ = std::fs::remove_dir_all(&tmp);
+                Ok(format!("Модов в наборе: {}", n + extra))
+            }
+            Err(e) => Err(e),
+        };
+        match &r { Ok(m) => job.done(m), Err(e) => job.fail(e) }
+        emit(json!({ "type": "sets" }));
+    });
+    Ok(json!({ "set": set, "job": jid }))
+}
+
+/// Установка сборки на существующий сервер: серверные моды и настройки.
+pub fn install_pack_to_server(id: &str, path: &str) -> Res<Value> {
+    let s = servers::get(id)?;
+    if servers::is_running(id) { crate::bail!("Сначала остановите сервер"); }
+    let p = crate::modpack::read(std::path::Path::new(path))?;
+    if p.loader != s.loader { crate::bail!("Сборка для {}, а сервер на {} — создайте новый сервер из этой сборки", installer::loader_title(&p.loader), installer::loader_title(&s.loader)); }
+    if p.mc != s.mc_version { crate::bail!("Сборка для Minecraft {}, а сервер на {} — смените версию сервера или создайте новый из сборки", p.mc, s.mc_version); }
+    let job = crate::core::Job::new(format!("Сборка «{}» → «{}»", p.name, s.name));
+    let jid = job.id;
+    tauri::async_runtime::spawn(async move {
+        let dir = PathBuf::from(&s.dir);
+        let r: Res<()> = async {
+            let n = crate::modpack::install_files(&p, "server", &dir, false, &|t, pr| job.step(t, pr), 0.0, 92.0).await?;
+            let o = crate::modpack::extract_overrides(&p, &dir, true).await?;
+            job.step(Some(&format!("Файлов: {n}, настроек: {o}")), Some(99.0));
+            Ok(())
+        }.await;
+        job.finish(&r, "Сборка установлена — запустите сервер");
+    });
+    Ok(json!({ "job": jid }))
+}

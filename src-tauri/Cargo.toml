@@ -1,6 +1,6 @@
 [package]
 name = "mc-admin-panel"
-version = "2.1.1"
+version = "2.2.0"
 description = "Админ-панель для создания и управления серверами Minecraft"
 edition = "2021"
 rust-version = "1.80"
@@ -13,6 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+mccore = { path = "../crates/mccore" }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
@@ -39,9 +40,3 @@ base64 = "0.22"
 axum = { version = "0.8", features = ["ws"] }
 urlencoding = "2"
 
-[profile.release]
-codegen-units = 1
-lto = true
-opt-level = "s"
-panic = "abort"
-strip = true

@@ -186,13 +186,13 @@ pub fn create_with(o: &Value, pack: Option<(crate::modpack::Pack, bool)>) -> Res
 async fn apply_pack(s: &Server, p: &crate::modpack::Pack, client: bool, job: &Job) -> Res<()> {
     let dir = PathBuf::from(&s.dir);
     job.step(Some("Скачивание модов сборки..."), Some(80.0));
-    let n = crate::modpack::install_files(p, "server", &dir, false, job, 80.0, 94.0).await?;
+    let n = crate::modpack::install_files(p, "server", &dir, false, &|t, pr| job.step(t, pr), 80.0, 94.0).await?;
     let o = crate::modpack::extract_overrides(p, &dir, true).await?;
     job.log(&format!("Модов и файлов: {n}, файлов настроек: {o}"));
     if client {
         job.step(Some("Набор модов для клиента..."), Some(95.0));
         let set = crate::mods::create_set(&json!({ "name": format!("{} (клиент)", p.name), "mcVersion": p.mc, "loader": p.loader, "loaderVersion": p.loader_version }))?;
-        let m = crate::modpack::install_files(p, "client", &crate::mods::set_dir(&set.id), true, job, 95.0, 99.0).await?;
+        let m = crate::modpack::install_files(p, "client", &crate::mods::set_dir(&set.id), true, &|t, pr| job.step(t, pr), 95.0, 99.0).await?;
         job.log(&format!("Набор для клиента: модов {m}"));
         emit(json!({ "type": "sets" }));
     }
