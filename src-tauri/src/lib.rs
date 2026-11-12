@@ -2,11 +2,17 @@
 pub mod api;
 pub mod backups;
 pub mod core;
+pub mod diagnose;
+pub mod files;
 pub mod http;
 pub mod importer;
 pub mod installer;
+pub mod modmeta;
+pub mod modpack;
 pub mod mods;
 pub mod native;
+pub mod network;
+pub mod providers;
 pub mod servers;
 pub mod web;
 
@@ -27,6 +33,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .invoke_handler(tauri::generate_handler![api::call, native::ui_ready, web_status])
         .setup(|app| {
@@ -58,3 +66,6 @@ pub fn run() {
         }
     });
 }
+
+#[cfg(test)]
+mod tests;

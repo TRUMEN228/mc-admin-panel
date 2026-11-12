@@ -65,7 +65,7 @@ pub fn backup(id: &str, note: &str) -> Res<u64> {
     Ok(jid)
 }
 
-fn make_zip(s: &Server, note: &str, job: &Job) -> Res<String> {
+pub fn make_zip(s: &Server, note: &str, job: &Job) -> Res<String> {
     let dirs = world_dirs(s);
     if dirs.is_empty() { crate::bail!("Папка мира не найдена (сервер ещё не запускался?)"); }
     let bdir = backup_dir(s);

@@ -1,7 +1,6 @@
 //! Моды сервера, каталог Modrinth и наборы модов клиента.
 use crate::core::{self, emit, Ctx, Res, DATA};
-use crate::{http, installer, servers};
-use futures_util::future::BoxFuture;
+use crate::{http, installer, providers, servers};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -11,44 +10,6 @@ use std::path::{Path, PathBuf};
 
 const MR: &str = "https://api.modrinth.com/v2";
 fn enc(v: &Value) -> String { urlencoding::encode(&v.to_string()).into_owned() }
-
-// ---------- Modrinth ----------
-pub async fn search(q: &str, mc: &str, loader: &str, kind: &str, offset: u64) -> Res<Value> {
-    let mut facets = vec![json!([format!("project_type:{kind}")])];
-    if !mc.is_empty() { facets.push(json!([format!("versions:{mc}")])); }
-    if !loader.is_empty() && loader != "vanilla" { facets.push(json!([format!("categories:{loader}")])); }
-    let url = format!("{MR}/search?limit=30&offset={offset}&query={}&facets={}", urlencoding::encode(q), enc(&json!(facets)));
-    let r = http::get_json(&url).await?;
-    let hits: Vec<Value> = r["hits"].as_array().cloned().unwrap_or_default().into_iter().map(|h| json!({
-        "id": h["project_id"], "slug": h["slug"], "title": h["title"], "desc": h["description"], "icon": h["icon_url"], "author": h["author"],
-        "downloads": h["downloads"], "client": h["client_side"], "server": h["server_side"], "categories": h["display_categories"],
-    })).collect();
-    Ok(json!({ "hits": hits, "total": r["total_hits"] }))
-}
-
-/// Скачивает подходящую версию проекта и обязательные зависимости.
-fn install_project(pid: String, mc: String, loader: String, dir: PathBuf, done: std::sync::Arc<Mutex<HashSet<String>>>) -> BoxFuture<'static, Res<Vec<String>>> {
-    Box::pin(async move {
-        if !done.lock().insert(pid.clone()) { return Ok(vec![]); }
-        let mut q = format!("?game_versions={}", enc(&json!([mc])));
-        if !loader.is_empty() && loader != "vanilla" { q += &format!("&loaders={}", enc(&json!([loader]))); }
-        let vers = http::get_json(&format!("{MR}/project/{pid}/version{q}")).await?;
-        let v = vers.get(0).ok_or(format!("Нет версии {pid} для {loader} {mc}"))?;
-        let files = v["files"].as_array().cloned().unwrap_or_default();
-        let f = files.iter().find(|x| x["primary"] == true).or(files.first()).ok_or("Нет файлов")?;
-        let fname = core::file_name(f["filename"].as_str().unwrap_or("mod.jar"));
-        http::download(f["url"].as_str().unwrap_or(""), &dir.join(&fname), |_| {}).await?;
-        let mut out = vec![fname];
-        for d in v["dependencies"].as_array().cloned().unwrap_or_default() {
-            if d["dependency_type"] == "required" {
-                if let Some(p) = d["project_id"].as_str() {
-                    if let Ok(more) = install_project(p.into(), mc.clone(), loader.clone(), dir.clone(), done.clone()).await { out.extend(more); }
-                }
-            }
-        }
-        Ok(out)
-    })
-}
 
 // ---------- jar-файлы ----------
 fn list_jars(dir: &Path) -> Vec<Value> {
@@ -94,11 +55,11 @@ pub fn toggle_server_mod(id: &str, f: &str) -> Res<()> { toggle(&mods_dir(&serve
 pub fn delete_server_mod(id: &str, f: &str) -> Res<()> { std::fs::remove_file(mods_dir(&servers::get(id)?).join(core::file_name(f))).ctx("Удаление") }
 pub fn add_server_files(id: &str, paths: &[String]) -> Res<Vec<String>> { copy_in(&mods_dir(&servers::get(id)?), paths) }
 pub fn upload_server_file(id: &str, name: &str, b64: &str) -> Res<()> { write_upload(&mods_dir(&servers::get(id)?), name, b64) }
-pub async fn install_server_mod(id: &str, pid: &str) -> Res<Vec<String>> {
+pub async fn install_server_mod(id: &str, provider: &str, pid: &str) -> Res<Vec<String>> {
     let s = servers::get(id)?;
     let d = mods_dir(&s);
     tokio::fs::create_dir_all(&d).await.ctx("")?;
-    install_project(pid.into(), s.mc_version, s.loader, d, Default::default()).await
+    providers::install(provider, pid, &s.mc_version, &s.loader, &d).await
 }
 
 // ---------- наборы модов клиента ----------
@@ -163,10 +124,10 @@ pub fn delete_set(id: &str) -> Res<()> {
     if s.dir.is_none() { let _ = std::fs::remove_dir_all(dir); }
     Ok(())
 }
-pub async fn install_set_mod(id: &str, pid: &str) -> Res<Vec<String>> {
+pub async fn install_set_mod(id: &str, provider: &str, pid: &str) -> Res<Vec<String>> {
     let s = get_set(id)?;
     if s.mc_version.is_empty() { crate::bail!("Сначала укажите версию Minecraft набора"); }
-    install_project(pid.into(), s.mc_version, s.loader, set_dir(id), Default::default()).await
+    providers::install(provider, pid, &s.mc_version, &s.loader, &set_dir(id)).await
 }
 pub fn delete_set_mod(id: &str, f: &str) -> Res<()> { std::fs::remove_file(set_dir(id).join(core::file_name(f))).ctx("Удаление") }
 pub fn toggle_set_mod(id: &str, f: &str) -> Res<()> { toggle(&set_dir(id), f) }
@@ -253,4 +214,23 @@ async fn install_client_loader(s: &ModSet) -> Res<String> {
         }
         _ => Ok(String::new()),
     }
+}
+
+// ---------- обновления ----------
+fn target(kind: &str, id: &str) -> Res<(PathBuf, String, String)> {
+    if kind == "mods" { let s = servers::get(id)?; Ok((mods_dir(&s), s.mc_version, s.loader)) }
+    else { let s = get_set(id)?; Ok((set_dir(id), s.mc_version, s.loader)) }
+}
+pub async fn check_updates(kind: &str, id: &str) -> Res<Value> {
+    let (d, mc, l) = target(kind, id)?;
+    if mc.is_empty() { crate::bail!("Не указана версия Minecraft"); }
+    providers::check_updates(&d, &mc, &l).await
+}
+pub async fn apply_updates(kind: &str, id: &str, list: &Value) -> Res<Value> {
+    let (d, _, _) = target(kind, id)?;
+    let (mut ok, mut failed) = (vec![], vec![]);
+    for u in list.as_array().cloned().unwrap_or_default() {
+        match providers::apply_update(&d, &u).await { Ok(f) => ok.push(f), Err(e) => failed.push(format!("{}: {e}", u["file"].as_str().unwrap_or(""))) }
+    }
+    Ok(json!({ "updated": ok, "failed": failed }))
 }

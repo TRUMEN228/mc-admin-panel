@@ -424,3 +424,24 @@ code, .code { font-family: var(--mono); font-size: 12.5px; background: var(--car
   .g2, .g3, .form-grid { grid-template-columns: 1fr; }
   .jobs { left: 16px; right: 16px; width: auto; }
 }
+
+/* ---------- раскладка «на всю высоту»: прокрутка только внутри панелей ---------- */
+.page.fill > *, #tab > * { flex-shrink: 0; }
+.fx { display: flex; flex-direction: column; gap: 14px; flex: 1 !important; min-height: 0; flex-shrink: 1 !important; }
+.fx-row { flex: 1 !important; flex-shrink: 1 !important; min-height: 0; align-items: stretch; grid-template-rows: minmax(0, 1fr); }
+.fx-card { display: flex; flex-direction: column; min-height: 0; }
+.fx-card > .card-head, .fx-card > .input-row, .fx-card > p, .fx-card > .row, .fx-card > .input-icon, .fx-card > .form-grid { flex-shrink: 0; }
+.fx-card > .scroll { flex: 1; min-height: 0; overflow: auto; }
+#tab > .fx-card, .page.fill > .fx-card { flex-shrink: 1 !important; }
+.tab-scroll { flex: 1 !important; flex-shrink: 1 !important; min-height: 0; overflow-y: auto; margin-right: -14px; padding-right: 14px; scrollbar-gutter: stable; }
+.page.fill > .tab-scroll { padding-bottom: 8px; }
+table.sticky thead th { position: sticky; top: 0; z-index: 1; background: var(--card); box-shadow: 0 1px 0 var(--border); }
+
+/* ---------- превью ---------- */
+.gallery { display: flex; gap: 10px; overflow-x: auto; padding: 4px 0 10px; margin: 6px 0 10px; scroll-snap-type: x proximity; }
+.gallery img { height: 190px; max-width: 340px; border-radius: 10px; object-fit: cover; flex-shrink: 0; cursor: zoom-in; background: var(--card-2); border: 1px solid var(--border); scroll-snap-align: start; transition: transform .15s; }
+.gallery img:hover { transform: scale(1.02); }
+.pj-body { white-space: pre-wrap; font-size: 13px; color: var(--text-2); max-height: 34vh; overflow: auto; padding: 12px 14px; background: var(--card-2); border-radius: 10px; border: 1px solid var(--border); }
+.lightbox { z-index: 80; cursor: zoom-out; background: rgba(0, 0, 0, .82); }
+.lightbox img { max-width: 92vw; max-height: 90vh; border-radius: 10px; box-shadow: var(--shadow-lg); }
+#modlist .list-item .d { -webkit-line-clamp: 2; }

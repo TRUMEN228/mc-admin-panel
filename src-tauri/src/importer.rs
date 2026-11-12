@@ -54,7 +54,7 @@ pub async fn detect_server(dir: &Path) -> Option<Server> {
     let mut srv = Server {
         id: String::new(), name: name.clone(), mc_version: String::new(), loader: "vanilla".into(), loader_version: String::new(),
         dir: dir.to_string_lossy().to_string(), port: 25565, ram, jvm_args, backup_dir: String::new(), max_backups: 0, auto_backup_min: 0,
-        auto_restart: true, auto_start: false, installed: true, imported: true, created: 0, java_major: 0, launch: Launch::default(), extra: Map::new(),
+        auto_restart: true, auto_start: false, installed: true, imported: true, created: 0, java_major: 0, launch: Launch::default(), jvm_preset: String::new(), extra: Map::new(),
     };
 
     // чем запускается сервер

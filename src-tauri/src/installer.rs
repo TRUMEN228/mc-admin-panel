@@ -230,8 +230,10 @@ pub fn loader_installer_url(loader: &str, mc: &str, lv: &str) -> String {
 pub fn launch_command(srv: &Server) -> Res<(PathBuf, Vec<String>)> {
     let java = find_java(srv.java_major).ok_or("Java не найдена — переустановите сервер или укажите путь в настройках")?;
     let mut a = http::java_proxy_args();
-    a.push(format!("-Xms{}M", srv.ram.min(1024)));
+    // Aikar рекомендует Xms = Xmx: куча выделяется сразу и не дёргается
+    a.push(format!("-Xms{}M", if srv.jvm_preset.is_empty() { srv.ram.min(1024) } else { srv.ram }));
     a.push(format!("-Xmx{}M", srv.ram));
+    a.extend(jvm_preset(&srv.jvm_preset, srv.ram, srv.java_major));
     // единая кодировка консоли: кириллица в логах и командах отображается корректно
     for p in ["file", "stdout", "stderr", "stdin"] { a.push(format!("-D{p}.encoding=UTF-8")); }
     a.extend(srv.jvm_args.split_whitespace().map(String::from));
@@ -242,4 +244,32 @@ pub fn launch_command(srv: &Server) -> Res<(PathBuf, Vec<String>)> {
     }
     a.push("nogui".into());
     Ok((java, a))
+}
+
+pub fn loader_title(l: &str) -> &'static str {
+    match l { "fabric" => "Fabric", "forge" => "Forge", "neoforge" => "NeoForge", "paper" => "Paper", _ => "Vanilla" }
+}
+
+/// Готовые наборы флагов JVM.
+pub fn jvm_preset(name: &str, ram: u32, java: u32) -> Vec<String> {
+    let v: Vec<&str> = match name {
+        // https://docs.papermc.io/paper/aikars-flags
+        "aikar" => {
+            let mut f = vec!["-XX:+UseG1GC", "-XX:+ParallelRefProcEnabled", "-XX:MaxGCPauseMillis=200", "-XX:+UnlockExperimentalVMOptions",
+                "-XX:+DisableExplicitGC", "-XX:+AlwaysPreTouch", "-XX:G1HeapWastePercent=5", "-XX:G1MixedGCCountTarget=4",
+                "-XX:G1MixedGCLiveThresholdPercent=90", "-XX:G1RSetUpdatingPauseTimePercent=5", "-XX:SurvivorRatio=32",
+                "-XX:+PerfDisableSharedMem", "-XX:MaxTenuringThreshold=1", "-Dusing.aikars.flags=https://mcflags.emc.gs", "-Daikars.new.flags=true"];
+            if ram >= 12288 { f.extend(["-XX:G1NewSizePercent=40", "-XX:G1MaxNewSizePercent=50", "-XX:G1HeapRegionSize=16M", "-XX:G1ReservePercent=15", "-XX:InitiatingHeapOccupancyPercent=20"]); }
+            else { f.extend(["-XX:G1NewSizePercent=30", "-XX:G1MaxNewSizePercent=40", "-XX:G1HeapRegionSize=8M", "-XX:G1ReservePercent=20", "-XX:InitiatingHeapOccupancyPercent=15"]); }
+            f
+        }
+        // ZGC: минимальные паузы, нужен Java 21+ (на 21 поколенческий режим включается флагом)
+        "zgc" if java >= 21 => {
+            let mut f = vec!["-XX:+UseZGC", "-XX:+AlwaysPreTouch", "-XX:+DisableExplicitGC", "-XX:+PerfDisableSharedMem"];
+            if java == 21 { f.push("-XX:+ZGenerational"); }
+            f
+        }
+        _ => vec![],
+    };
+    v.into_iter().map(String::from).collect()
 }

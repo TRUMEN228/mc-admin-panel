@@ -49,6 +49,8 @@ pub struct Server {
     #[serde(default)] pub created: u64,
     #[serde(default)] pub java_major: u32,
     #[serde(default)] pub launch: Launch,
+    /// набор флагов JVM: "" | "aikar" | "zgc"
+    #[serde(default)] pub jvm_preset: String,
     #[serde(flatten)] pub extra: Map<String, Value>,
 }
 
@@ -146,7 +148,9 @@ pub async fn wait_log(id: &str, re: &str, ms: u64) -> Option<String> {
 }
 
 // ---------- создание / изменение ----------
-pub fn create(o: &Value) -> Res<Value> {
+pub fn create(o: &Value) -> Res<Value> { create_with(o, None) }
+/// Создание сервера; pack — сборка .mrpack и флаг «создать набор для клиента».
+pub fn create_with(o: &Value, pack: Option<(crate::modpack::Pack, bool)>) -> Res<Value> {
     let name = core::safe_name(&core::arg_str(o, "name"));
     let dir = match core::arg_str(o, "dir") { d if d.trim().is_empty() => PathBuf::from(core::set_str("serversDir")).join(&name), d => PathBuf::from(d.trim()) };
     let dir = std::path::absolute(&dir).unwrap_or(dir).to_string_lossy().to_string();
@@ -159,17 +163,18 @@ pub fn create(o: &Value) -> Res<Value> {
         loader_version: core::arg_str(o, "loaderVersion"), dir,
         port: num("port", 25565) as u16, ram: num("ram", core::set_u64("defaultRamMb").max(512)) as u32, jvm_args: String::new(),
         backup_dir: String::new(), max_backups: 0, auto_backup_min: 0, auto_restart: true, auto_start: false,
-        installed: false, imported: false, created: now_ms(), java_major: 0, launch: Launch::default(), extra: Map::new(),
+        installed: false, imported: false, created: now_ms(), java_major: 0, launch: Launch::default(), jvm_preset: String::new(), extra: Map::new(),
     };
     if srv.mc_version.is_empty() { crate::bail!("Не выбрана версия Minecraft"); }
     LIST.lock().push(srv.clone());
     save();
     emit(json!({ "type": "servers" }));
-    let job = Job::new(format!("Установка «{name}» ({} {})", srv.loader, srv.mc_version));
+    let job = Job::new(match &pack { Some((p, _)) => format!("Установка сборки «{}» → «{name}»", p.name), None => format!("Установка «{name}» ({} {})", srv.loader, srv.mc_version) });
     let jid = job.id;
     let mut s = srv.clone();
     spawn(async move {
-        let r = installer::install(&mut s, &job).await;
+        let mut r = installer::install(&mut s, &job).await;
+        if let (Ok(_), Some((p, client))) = (&r, &pack) { r = apply_pack(&s, p, *client, &job).await; }
         let _ = with(&s.id, |x| { x.java_major = s.java_major; x.launch = s.launch.clone(); x.installed = s.installed; });
         save();
         job.finish(&r, "Сервер установлен");
@@ -177,6 +182,50 @@ pub fn create(o: &Value) -> Res<Value> {
         emit(json!({ "type": "servers" }));
     });
     Ok(json!({ "srv": view(&srv), "job": jid }))
+}
+async fn apply_pack(s: &Server, p: &crate::modpack::Pack, client: bool, job: &Job) -> Res<()> {
+    let dir = PathBuf::from(&s.dir);
+    job.step(Some("Скачивание модов сборки..."), Some(80.0));
+    let n = crate::modpack::install_files(p, "server", &dir, false, job, 80.0, 94.0).await?;
+    let o = crate::modpack::extract_overrides(p, &dir, true).await?;
+    job.log(&format!("Модов и файлов: {n}, файлов настроек: {o}"));
+    if client {
+        job.step(Some("Набор модов для клиента..."), Some(95.0));
+        let set = crate::mods::create_set(&json!({ "name": format!("{} (клиент)", p.name), "mcVersion": p.mc, "loader": p.loader, "loaderVersion": p.loader_version }))?;
+        let m = crate::modpack::install_files(p, "client", &crate::mods::set_dir(&set.id), true, job, 95.0, 99.0).await?;
+        job.log(&format!("Набор для клиента: модов {m}"));
+        emit(json!({ "type": "sets" }));
+    }
+    Ok(())
+}
+/// Смена версии Minecraft/загрузчика: бэкап мира, затем переустановка ядра.
+pub fn change_version(id: &str, mc: &str, lv: &str) -> Res<u64> {
+    if is_running(id) { crate::bail!("Сначала остановите сервер"); }
+    let mut s = get(id)?;
+    if mc.is_empty() { crate::bail!("Не выбрана версия"); }
+    if s.loader != "vanilla" && lv.is_empty() { crate::bail!("Не выбрана версия загрузчика"); }
+    let job = Job::new(format!("Смена версии «{}»: {} → {mc}", s.name, s.mc_version));
+    let jid = job.id;
+    let (mc, lv) = (mc.to_string(), lv.to_string());
+    spawn(async move {
+        let r: Res<()> = async {
+            job.step(Some("Бэкап мира перед обновлением..."), Some(2.0));
+            let s2 = s.clone();
+            let j2 = job.clone();
+            let note = format!("before-{}", s.mc_version);
+            let b = tauri::async_runtime::spawn_blocking(move || crate::backups::make_zip(&s2, &note, &j2)).await.map_err(|e| e.to_string())?;
+            match b { Ok(f) => job.log(&format!("Бэкап: {f}")), Err(e) if e.contains("не найдена") => job.log("Мира ещё нет — бэкап не нужен"), Err(e) => return Err(e) }
+            s.mc_version = mc.clone();
+            s.loader_version = lv.clone();
+            installer::install(&mut s, &job).await?;
+            with(&s.id, |x| { x.mc_version = s.mc_version.clone(); x.loader_version = s.loader_version.clone(); x.java_major = s.java_major; x.launch = s.launch.clone(); x.installed = true; })?;
+            Ok(())
+        }.await;
+        save();
+        job.finish(&r, "Версия изменена");
+        emit(json!({ "type": "servers" }));
+    });
+    Ok(jid)
 }
 pub fn same_path(a: &str, b: &str) -> bool {
     let n = |p: &str| p.trim_end_matches(['\\', '/']).replace('/', "\\").to_lowercase();
@@ -217,6 +266,7 @@ pub fn update(id: &str, p: &Value) -> Res<Value> {
         if let Some(v) = p.get("autoRestart").and_then(|v| v.as_bool()) { s.auto_restart = v; }
         if let Some(v) = p.get("autoStart").and_then(|v| v.as_bool()) { s.auto_start = v; }
         if let Some(v) = p.get("loaderVersion").and_then(|v| v.as_str()) { s.loader_version = v.into(); }
+        if let Some(v) = p.get("jvmPreset").and_then(|v| v.as_str()) { s.jvm_preset = v.into(); }
         s.clone()
     })?;
     save();
@@ -311,6 +361,8 @@ pub fn start(id: String) -> BoxFuture<'static, Res<()>> {
             let _ = exit_tx.send(true);
             let crashed = !stopping && code != 0;
             if crashed {
+                let diag = crate::diagnose::diagnose(&id, started).unwrap_or(json!({}));
+                emit(json!({ "type": "crash", "id": id, "code": code, "diag": diag }));
                 let restart = auto_restart && now_ms() - started > 60_000 && get(&id).map(|s| s.auto_restart).unwrap_or(false);
                 native::notify("Сбой сервера", &format!("«{name}» аварийно завершился (код {code}).{}", if restart { " Автоперезапуск через 5 с." } else { "" }));
                 if restart {

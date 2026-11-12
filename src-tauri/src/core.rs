@@ -93,6 +93,8 @@ fn defaults() -> Map<String, Value> {
         "port": 7777,
         "webLan": false,
         "webPassword": "",
+        "curseforgeKey": "",
+        "autoUpdateCheck": true,
     });
     v.as_object().unwrap().clone()
 }

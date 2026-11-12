@@ -1,0 +1,50 @@
+name: Релиз
+
+# Создайте тег vX.Y.Z (версия должна совпадать с tauri.conf.json) — Actions соберёт
+# установщик, файл обновлений latest.json и портативный exe и опубликует релиз.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Тесты
+        working-directory: src-tauri
+        run: cargo test --lib
+      - name: Сборка и публикация
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: MC Admin Panel __VERSION__
+          releaseBody: |
+            **MC Admin Panel __VERSION__ Setup.exe** — установщик, обновляется автоматически.
+            **MC Admin Panel __VERSION__ Portable.exe** — без установки, данные хранятся рядом с exe.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+      - name: Портативная версия
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          cp src-tauri/target/release/mc-admin-panel.exe "MC Admin Panel $v Portable.exe"
+          gh release upload "$GITHUB_REF_NAME" "MC Admin Panel $v Portable.exe" --clobber

@@ -1,6 +1,6 @@
 //! Единая точка входа: команды UI (через IPC Tauri или веб-режим).
 use crate::core::{self, arg_str, Res};
-use crate::{backups, importer, installer, mods, servers};
+use crate::{backups, diagnose, files, importer, installer, modpack, mods, network, providers, servers};
 use serde_json::{json, Value};
 
 fn strs(a: &Value, k: &str) -> Vec<String> {
@@ -20,7 +20,33 @@ pub async fn dispatch(cmd: &str, a: Value, web: bool) -> Res<Value> {
         "open" => { if web { crate::bail!("Недоступно в веб-режиме"); } core::open_path(&s("path"))?; ok() }
         "versions" => installer::mc_versions(a["snapshots"].as_bool().unwrap_or(false)).await,
         "loaderVersions" => installer::loader_versions(&s("loader"), &s("mc")).await,
-        "modrinth.search" => mods::search(&s("q"), &s("mc"), &s("loader"), &match s("type") { t if t.is_empty() => "mod".into(), t => t }, a["offset"].as_u64().unwrap_or(0)).await,
+        "catalog.providers" => Ok(providers::list(&s("loader"))),
+        "catalog.search" | "modrinth.search" => providers::search(&match s("provider") { p if p.is_empty() => "modrinth".into(), p => p }, &s("q"), &s("mc"), &s("loader"),
+            &match s("type") { t if t.is_empty() => "mod".into(), t => t }, a["offset"].as_u64().unwrap_or(0)).await,
+        "catalog.details" => providers::details(&match s("provider") { p if p.is_empty() => "modrinth".into(), p => p }, &s("projectId")).await,
+        "mods.meta" => {
+            let dir = if s("kind") == "mods" { mods::mods_dir(&servers::get(&id)?) } else { mods::set_dir(&id) };
+            crate::modmeta::for_dir(&dir).await
+        }
+        "updates.check" => mods::check_updates(&s("kind"), &id).await,
+        "updates.apply" => mods::apply_updates(&s("kind"), &id, &a["list"]).await,
+
+        // ---- сборки .mrpack ----
+        "pack.inspect" => {
+            let path = if s("path").is_empty() { modpack::download(&s("projectId"), Some(&s("versionId"))).await? } else { std::path::PathBuf::from(s("path")) };
+            let p = modpack::read(&path)?;
+            let mut v = modpack::summary(&p);
+            v["path"] = json!(path);
+            Ok(v)
+        }
+        "servers.createFromPack" => {
+            let p = modpack::read(std::path::Path::new(&s("packPath")))?;
+            let mut o = a.clone();
+            o["mcVersion"] = json!(p.mc); o["loader"] = json!(p.loader); o["loaderVersion"] = json!(p.loader_version);
+            if s("name").is_empty() { o["name"] = json!(p.name); }
+            let client = a["clientSet"].as_bool().unwrap_or(false);
+            servers::create_with(&o, Some((p, client)))
+        }
 
         // ---- серверы ----
         "servers.list" => Ok(servers::all()),
@@ -32,7 +58,16 @@ pub async fn dispatch(cmd: &str, a: Value, web: bool) -> Res<Value> {
         "servers.stop" => { servers::stop(&id).await?; ok() }
         "servers.restart" => { servers::restart(&id).await?; ok() }
         "servers.kill" => { servers::kill(&id); ok() }
+        "servers.stopAll" => { servers::stop_all().await; ok() }
         "servers.reinstall" => Ok(json!({ "job": servers::reinstall(&id)? })),
+        "servers.changeVersion" => Ok(json!({ "job": servers::change_version(&id, &s("mcVersion"), &s("loaderVersion"))? })),
+        "servers.diagnose" => diagnose::diagnose(&id, a["since"].as_u64().unwrap_or(0)),
+        "net.info" => network::info(&id).await,
+        "net.firewall" => { if web { crate::bail!("Недоступно в веб-режиме"); } network::firewall_add(&id).await }
+        "net.check" => network::check(&id).await,
+        "files.list" => files::list(&id, &s("path")),
+        "files.read" => files::read(&id, &s("path")),
+        "files.write" => { files::write(&id, &s("path"), &s("text"))?; ok() }
         "servers.command" => { servers::command(&id, &s("cmd")).await?; ok() }
         "servers.log" => Ok(servers::log(&id)),
         "servers.props" => servers::read_props(&id),
@@ -47,7 +82,7 @@ pub async fn dispatch(cmd: &str, a: Value, web: bool) -> Res<Value> {
 
         // ---- моды сервера ----
         "mods.list" => mods::server_mods(&id),
-        "mods.install" => Ok(json!(mods::install_server_mod(&id, &s("projectId")).await?)),
+        "mods.install" => Ok(json!(mods::install_server_mod(&id, &s("provider"), &s("projectId")).await?)),
         "mods.toggle" => { mods::toggle_server_mod(&id, &s("file"))?; ok() }
         "mods.delete" => { mods::delete_server_mod(&id, &s("file"))?; ok() }
         "mods.addFiles" => { if web { crate::bail!("Недоступно в веб-режиме"); } Ok(json!(mods::add_server_files(&id, &strs(&a, "paths"))?)) }
@@ -59,7 +94,7 @@ pub async fn dispatch(cmd: &str, a: Value, web: bool) -> Res<Value> {
         "sets.fromServer" => mods::set_from_server(&id).await,
         "sets.update" => mods::update_set(&id, &a["patch"]),
         "sets.delete" => { mods::delete_set(&id)?; ok() }
-        "sets.install" => Ok(json!(mods::install_set_mod(&id, &s("projectId")).await?)),
+        "sets.install" => Ok(json!(mods::install_set_mod(&id, &s("provider"), &s("projectId")).await?)),
         "sets.toggle" => { mods::toggle_set_mod(&id, &s("file"))?; ok() }
         "sets.deleteMod" => { mods::delete_set_mod(&id, &s("file"))?; ok() }
         "sets.addFiles" => { if web { crate::bail!("Недоступно в веб-режиме"); } Ok(json!(mods::add_set_files(&id, &strs(&a, "paths"))?)) }
