@@ -6,6 +6,7 @@ pub mod diagnose;
 pub mod files;
 pub mod importer;
 pub mod installer;
+pub mod mobile;
 pub mod mods;
 pub mod native;
 pub mod network;

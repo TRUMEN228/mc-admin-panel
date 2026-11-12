@@ -17,6 +17,11 @@ pub async fn dispatch(cmd: &str, a: Value, web: bool) -> Res<Value> {
         "settings.save" => core::save_settings(a),
         "system.info" => { let mut v = servers::system_info(); v["web"] = json!(web); Ok(v) }
         "jobs" => Ok(json!(core::jobs())),
+        "mobile.pairStart" => { if web { crate::bail!("Привязка телефона — только в самой панели"); } crate::mobile::pair_start() }
+        "mobile.pairCancel" => { crate::mobile::pair_cancel(); ok() }
+        "mobile.devices" => Ok(crate::mobile::devices()),
+        "mobile.revoke" => { if web { crate::bail!("Только в самой панели"); } crate::mobile::revoke(&id)?; ok() }
+        "mobile.addresses" => Ok(json!(crate::mobile::addresses())),
         "open" => { if web { crate::bail!("Недоступно в веб-режиме"); } core::open_path(&s("path"))?; ok() }
         "versions" => installer::mc_versions(a["snapshots"].as_bool().unwrap_or(false)).await,
         "loaderVersions" => installer::loader_versions(&s("loader"), &s("mc")).await,

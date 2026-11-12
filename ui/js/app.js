@@ -133,6 +133,7 @@ function handleEvent(m) {
     case 'sys': S.sys = m; { const e = $('#sys-mini'); if (e) e.innerHTML = sysMini(); } if (cur.page === 'dash') dashTotals(); return;
     case 'settings': return call('settings.get').then((v) => { S.settings = v; applyTheme(); });
     case 'sets': if (cur.page === 'sets') route(); return;
+    case 'devices': PAIR_LISTENERS.forEach((f) => f(m)); renderDevices(); return;
     case 'quitting': toast('Остановка серверов перед выходом…', 'info', 60000); return;
   }
 }
@@ -198,7 +199,7 @@ function srvCardInner(s) {
   return `<div class="head"><div class="srv-icon ${s.status}">${ic(LOADERS[s.loader]?.icon || 'server')}</div>
       <div class="grow"><a class="name" href="#server/${s.id}/console">${esc(s.name)}</a><div class="small dim">${loaderName(s.loader)} ${esc(s.mcVersion)} · порт ${s.port}</div></div>
       <span class="badge ${st[1]}">${st[0]}</span></div>
-    <div class="stats3"><div class="mini-stat"><div class="k">CPU</div><div class="v">${on && s.stats ? s.stats.cpu + '%' : '—'}</div></div>
+    <div class="stats3"><div class="mini-stat"><div class="k">CPU</div><div class="v">${on && s.stats ? fmtCpu(s.stats.cpu) + '%' : '—'}</div></div>
       <div class="mini-stat"><div class="k">Память</div><div class="v">${on && s.stats ? fmtMb(memMb) : '—'}<span class="dim small"> / ${fmtMb(s.ram)}</span></div></div>
       <div class="mini-stat"><div class="k">Аптайм</div><div class="v">${on && s.started ? fmtDur(Date.now() - s.started) : '—'}</div></div></div>
     ${dualChart(on ? s.history : [], s.ram)}
@@ -327,7 +328,7 @@ async function browse(sel) { const p = await native.pickFolder($(sel).value); if
 const TABS = { console: ['Консоль', 'terminal'], mods: ['Моды', 'package'], backups: ['Бэкапы', 'archive'], props: ['Настройки мира', 'sliders'], players: ['Игроки', 'users'], files: ['Файлы', 'folder'], config: ['Параметры', 'wrench'] };
 function srvMetrics(s) {
   const memMb = s.stats ? Math.round(s.stats.mem / 1048576) : 0, h = s.history || [];
-  return `<div class="metric"><div class="k">${ic('cpu')}CPU</div><div class="v">${s.stats ? s.stats.cpu : '—'}<small>${s.stats ? '%' : ''}</small></div>${sparkline(h.map((x) => x[1]), 'var(--chart-1)', 100)}</div>
+  return `<div class="metric"><div class="k">${ic('cpu')}CPU</div><div class="v">${s.stats ? fmtCpu(s.stats.cpu) : '—'}<small>${s.stats ? '%' : ''}</small></div>${sparkline(h.map((x) => x[1]), 'var(--chart-1)', 100)}</div>
     <div class="metric"><div class="k">${ic('memory')}Память</div><div class="v">${s.stats ? fmtMb(memMb) : '—'}<small>из ${fmtMb(s.ram)}</small></div>${sparkline(h.map((x) => x[2]), 'var(--chart-2)', s.ram)}</div>
     <div class="metric"><div class="k">${ic('users')}Игроки</div><div class="v">${s.players.length}</div>${sparkline(h.map((x) => x[3]), 'var(--chart-3)')}</div>
     <div class="metric"><div class="k">${ic('clock')}Аптайм</div><div class="v" style="font-size:20px">${s.status !== 'stopped' && s.started ? fmtDur(Date.now() - s.started) : '—'}</div></div>`;
@@ -1053,6 +1054,11 @@ async function pSettings() {
     <div class="set-group-title">Каталоги модов</div><div class="set-list">
       ${item('key', 'API-ключ CurseForge', `Нужен для поиска, установки и обновления модов с CurseForge. Бесплатно: <a href="#" onclick="native.openUrl('https://console.curseforge.com/');return false">console.curseforge.com</a>. Modrinth, Hangar и SpigotMC работают без ключа`, inp('curseforgeKey', 'password', 'autocomplete="off" placeholder="не задан"'))}
     </div>
+    ${NATIVE ? `<div class="set-group-title">Мобильное приложение</div><div class="set-list">
+      ${item('wifi', 'Доступ для телефона', 'Приложение MC Admin Mobile управляет серверами по Wi-Fi или через Tailscale. Доступ — только у привязанных устройств', sw('st-mobileEnabled', st.mobileEnabled), true)}
+      ${item('key', 'Подключить телефон', 'Откройте приложение на телефоне и отсканируйте QR-код', `<button class="sm primary" onclick="pairPhone()">${ic('plus')}Подключить</button>`, true)}
+      <div id="devices"></div>
+    </div>` : ''}
     <div class="set-group-title">Веб-доступ</div><div class="set-list">
       ${item('globe', 'Доступ из браузера', web.running ? `Работает: <a href="#" onclick="native.openUrl('http://localhost:${st.port}');return false">http://localhost:${st.port}</a>` : web.error ? `<span style="color:var(--red)">${esc(web.error)}</span>` : 'Та же панель в браузере. По умолчанию выключено', sw('st-webEnabled', st.webEnabled), true)}
       ${item('wifi', 'Порт', 'Порт веб-интерфейса', inp('port', 'number', 'style="width:140px"'), true)}
@@ -1070,11 +1076,51 @@ async function pSettings() {
     $$('#st-theme button').forEach((x) => x.classList.toggle('on', x === b));
     S.settings = await api('settings.save', { theme: b.dataset.v }); applyTheme();
   }));
+  renderDevices();
 }
+// ---------- мобильное приложение ----------
+async function renderDevices() {
+  const el = $('#devices'); if (!el) return;
+  const list = await call('mobile.devices').catch(() => []);
+  el.innerHTML = list.map((d) => `<div class="set-item">${ic('cpu')}<div class="txt"><b>${esc(d.name)}</b><span>Подключён ${fmtDate(d.created)} · последний доступ ${fmtAgo(d.lastSeen || d.created)}</span></div>
+    <div class="ctl auto"><button class="sm danger" onclick='revokeDevice(${attr(d.id)},${attr(d.name)})'>Отозвать доступ</button></div></div>`).join('');
+}
+async function revokeDevice(id, name) {
+  if (!(await confirmDialog(`«${name}» больше не сможет управлять панелью.`, { title: 'Отозвать доступ?', ok: 'Отозвать', danger: true }))) return;
+  await api('mobile.revoke', { id }); renderDevices();
+}
+async function pairPhone() {
+  if (!S.settings.mobileEnabled) {
+    if (!(await confirmDialog('Чтобы телефон мог подключиться, панель начнёт принимать подключения из локальной сети и Tailscale (только от привязанных устройств).', { title: 'Включить доступ для телефона?', ok: 'Включить' }))) return;
+    S.settings = await api('settings.save', { mobileEnabled: true });
+    const sw = $('#st-mobileEnabled'); if (sw) sw.checked = true;
+  }
+  let r;
+  try { r = await call('mobile.pairStart'); } catch (e) { return toast(e.message, 'error'); }
+  const addr = r.addresses.map((a) => `<div class="row nowrap small"><span class="badge ${a.kind === 'tailscale' ? 'blue' : ''}">${a.kind === 'tailscale' ? 'Tailscale' : 'Wi-Fi / LAN'}</span><code class="selectable">${esc(a.ip)}:${r.port}</code></div>`).join('');
+  const done = modal({ title: 'Подключить телефон', icon: 'wifi', wide: true,
+    body: `<div class="row nowrap" style="align-items:flex-start;gap:20px">
+      <div style="background:#fff;border-radius:12px;padding:6px;flex-shrink:0;width:252px;height:252px">${r.qr.replace('<svg', '<svg style="width:240px;height:240px"')}</div>
+      <div class="grow stack" style="gap:10px">
+        <p style="margin:0">1. Установите <b>MC Admin Mobile</b> на телефон.<br>2. Нажмите «Добавить панель» и отсканируйте QR-код.</p>
+        <p style="margin:0" class="small dim">Или введите вручную адрес и код:</p>
+        <div style="font:600 30px var(--mono);letter-spacing:.2em" class="selectable">${r.code.slice(0, 3)} ${r.code.slice(3)}</div>
+        <div class="stack" style="gap:6px">${addr || '<p class="small" style="color:var(--red)">Нет сетевых подключений</p>'}</div>
+        <p class="small dim" style="margin:0">${r.tailscale ? 'Через Tailscale телефон подключится и вне дома.' : 'Вне дома: установите <a href="#" onclick="native.openUrl(\'https://tailscale.com/download\');return false">Tailscale</a> на компьютер и телефон (один аккаунт) — адрес появится здесь.'}<br>Код действует 10 минут.</p>
+      </div></div>`,
+    buttons: [{ label: 'Закрыть', value: null }] });
+  const off = (m) => { if (m.type === 'devices') { document.querySelector('.overlay .foot button')?.click(); toast('Телефон подключён'); renderDevices(); } };
+  PAIR_LISTENERS.push(off);
+  await done;
+  PAIR_LISTENERS.splice(PAIR_LISTENERS.indexOf(off), 1);
+  call('mobile.pairCancel').catch(() => {});
+}
+const PAIR_LISTENERS = [];
+
 async function saveSettings() {
   const o = {};
   ['serversDir', 'backupsDir', 'maxBackups', 'defaultRamMb', 'javaPath', 'minecraftDir', 'proxy', 'port', 'webPassword', 'curseforgeKey'].forEach((k) => { const e = $('#st-' + k); if (e) o[k] = e.value.trim(); });
-  ['launchAtLogin', 'minimizeToTray', 'notifications', 'webEnabled', 'webLan', 'autoUpdateCheck'].forEach((k) => { const e = $('#st-' + k); if (e) o[k] = e.checked; });
+  ['launchAtLogin', 'minimizeToTray', 'notifications', 'webEnabled', 'webLan', 'autoUpdateCheck', 'mobileEnabled'].forEach((k) => { const e = $('#st-' + k); if (e) o[k] = e.checked; });
   if (o.webLan && !o.webPassword) { toast('Для доступа из локальной сети задайте пароль', 'error'); return; }
   S.settings = await api('settings.save', o);
   toast('Настройки сохранены');

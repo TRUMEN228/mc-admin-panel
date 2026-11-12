@@ -69,7 +69,7 @@ fn with<R>(id: &str, f: impl FnOnce(&mut Server) -> R) -> Res<R> {
 
 // ---------- runtime ----------
 #[derive(Serialize, Clone, Copy, Default)]
-pub struct Stats { pub cpu: f32, pub mem: u64 }
+pub struct Stats { pub cpu: f64, pub mem: u64 }
 
 #[derive(Default)]
 pub struct Runtime {
@@ -80,7 +80,7 @@ pub struct Runtime {
     pub stopping: bool,
     pub stats: Option<Stats>,
     /// история для графиков: [время, cpu, память МБ, игроки]
-    pub history: VecDeque<(u64, f32, u64, usize)>,
+    pub history: VecDeque<(u64, f64, u64, usize)>,
     pub pid: Option<u32>,
     stdin: Option<Arc<tokio::sync::Mutex<tokio::process::ChildStdin>>>,
     kill_tx: Option<mpsc::UnboundedSender<()>>,
@@ -113,8 +113,8 @@ pub fn all_raw() -> Vec<Server> { LIST.lock().clone() }
 pub fn log(id: &str) -> Value { rt(id, |r| json!(r.log.iter().collect::<Vec<_>>())) }
 
 fn set_status(id: &str, st: &'static str) {
-    let prev = rt(id, |r| std::mem::replace(&mut r.status, st));
-    if prev != st { emit(json!({ "type": "status", "id": id, "status": st })); }
+    let (prev, started) = rt(id, |r| (std::mem::replace(&mut r.status, st), r.started));
+    if prev != st { emit(json!({ "type": "status", "id": id, "status": st, "started": started })); }
 }
 
 static RE_DONE: Lazy<Regex> = Lazy::new(|| Regex::new(r"Done \([\d.,]+s\)!").unwrap());
@@ -137,7 +137,7 @@ pub fn push_log(id: &str, line: String) {
     if became_running { set_status(id, "running"); }
     if let Some((p, j)) = joined {
         let players = rt(id, |r| r.players.iter().cloned().collect::<Vec<_>>());
-        emit(json!({ "type": "players", "id": id, "players": players, "player": p, "joined": j }));
+        emit(json!({ "type": "players", "id": id, "name": get(id).map(|s| s.name).unwrap_or_default(), "players": players, "player": p, "joined": j }));
     }
 }
 /// Ждёт строку лога по регулярному выражению (None — по таймауту).
@@ -362,7 +362,7 @@ pub fn start(id: String) -> BoxFuture<'static, Res<()>> {
             let crashed = !stopping && code != 0;
             if crashed {
                 let diag = crate::diagnose::diagnose(&id, started).unwrap_or(json!({}));
-                emit(json!({ "type": "crash", "id": id, "code": code, "diag": diag }));
+                emit(json!({ "type": "crash", "id": id, "name": name, "code": code, "diag": diag }));
                 let restart = auto_restart && now_ms() - started > 60_000 && get(&id).map(|s| s.auto_restart).unwrap_or(false);
                 native::notify("Сбой сервера", &format!("«{name}» аварийно завершился (код {code}).{}", if restart { " Автоперезапуск через 5 с." } else { "" }));
                 if restart {
@@ -417,7 +417,7 @@ pub fn start_monitor() {
             sys.refresh_memory();
             let now = now_ms();
             for (id, pid) in &pids {
-                let st = sys.process(Pid::from_u32(*pid)).map(|p| Stats { cpu: ((p.cpu_usage() / cores) * 10.0).round() / 10.0, mem: p.memory() });
+                let st = sys.process(Pid::from_u32(*pid)).map(|p| Stats { cpu: ((p.cpu_usage() / cores) as f64 * 10.0).round() / 10.0, mem: p.memory() });
                 let (players, status) = rt(id, |r| {
                     r.stats = st;
                     if let Some(s) = st { r.history.push_back((now, s.cpu, s.mem / 1_048_576, r.players.len())); if r.history.len() > 180 { r.history.pop_front(); } }
@@ -425,7 +425,7 @@ pub fn start_monitor() {
                 });
                 emit(json!({ "type": "stats", "id": id, "stats": st, "players": players, "status": status, "t": now }));
             }
-            emit(json!({ "type": "sys", "cpu": (sys.global_cpu_usage() * 10.0).round() / 10.0, "memUsed": sys.used_memory(), "memTotal": sys.total_memory() }));
+            emit(json!({ "type": "sys", "cpu": (sys.global_cpu_usage() as f64 * 10.0).round() / 10.0, "memUsed": sys.used_memory(), "memTotal": sys.total_memory() }));
         }
     });
 }

@@ -6,6 +6,7 @@ const attr = (v) => esc(JSON.stringify(v));
 const plural = (n, a, b, c) => { const m10 = n % 10, m100 = n % 100; return m10 === 1 && m100 !== 11 ? a : m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20) ? b : c; };
 const fmtBytes = (b) => { if (!b) return '0 Б'; const u = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ']; const i = Math.min(4, Math.floor(Math.log(b) / Math.log(1024))); return (b / 1024 ** i).toFixed(i >= 3 ? 2 : i ? 1 : 0).replace('.', ',') + ' ' + u[i]; };
 const fmtMb = (mb) => mb >= 1024 ? (mb / 1024).toFixed(mb % 1024 ? 1 : 0).replace('.', ',') + ' ГБ' : mb + ' МБ';
+const fmtCpu = (v) => (Math.round((+v || 0) * 10) / 10).toString().replace('.', ',');
 const fmtDate = (t) => new Date(t).toLocaleString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 const fmtNum = (n) => n >= 1e6 ? (n / 1e6).toFixed(1).replace('.', ',') + ' млн' : n >= 1e3 ? Math.round(n / 1e3) + ' тыс.' : String(n);
 function fmtAgo(t) {

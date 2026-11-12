@@ -93,6 +93,7 @@ fn defaults() -> Map<String, Value> {
         "port": 7777,
         "webLan": false,
         "webPassword": "",
+        "mobileEnabled": false,
         "curseforgeKey": "",
         "autoUpdateCheck": true,
     });
