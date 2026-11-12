@@ -1,6 +1,6 @@
 [package]
 name = "mc-mod-collector"
-version = "1.0.0"
+version = "1.0.1"
 description = "Сборщик модов Minecraft: поиск, сборки .mrpack, установка на клиент"
 edition = "2021"
 
