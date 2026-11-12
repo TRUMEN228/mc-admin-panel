@@ -57,3 +57,40 @@ pub fn loader_title(l: &str) -> &'static str {
 
 pub fn sha512_hex(b: &[u8]) -> String { use sha2::Digest; hex::encode(sha2::Sha512::digest(b)) }
 pub fn sha1_hex(b: &[u8]) -> String { sha1_smol::Sha1::from(b).digest().to_string() }
+
+/// Настройки, выбранные в установщике (installer.json в папке данных, UTF-16LE или UTF-8).
+/// Читаются один раз: файл удаляется.
+pub fn take_installer_settings(data_dir: &Path) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let f = data_dir.join("installer.json");
+    let b = std::fs::read(&f).ok()?;
+    let _ = std::fs::remove_file(&f);
+    let text = if b.starts_with(&[0xFF, 0xFE]) {
+        let u: Vec<u16> = b[2..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        String::from_utf16_lossy(&u)
+    } else {
+        String::from_utf8_lossy(&b).trim_start_matches('\u{feff}').to_string()
+    };
+    match serde_json::from_str::<serde_json::Value>(text.trim_matches('\0').trim()) {
+        Ok(serde_json::Value::Object(mut m)) => { m.remove("installer"); Some(m) }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn installer_settings_utf16() {
+        let d = std::env::temp_dir().join(format!("mccore-inst-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let json = r#"{"minecraftDir":"C:\\Users\\Денис\\AppData\\Roaming\\.minecraft","launchAtLogin":true,"installer":true}"#;
+        let mut b = vec![0xFF, 0xFE];
+        for u in json.encode_utf16() { b.extend_from_slice(&u.to_le_bytes()); }
+        std::fs::write(d.join("installer.json"), b).unwrap();
+        let m = super::take_installer_settings(&d).unwrap();
+        assert_eq!(m["minecraftDir"], r"C:\Users\Денис\AppData\Roaming\.minecraft");
+        assert_eq!(m["launchAtLogin"], true);
+        assert!(!m.contains_key("installer"));
+        assert!(!d.join("installer.json").exists(), "файл читается один раз");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}

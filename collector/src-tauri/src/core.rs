@@ -55,6 +55,11 @@ fn settings_file() -> PathBuf { DATA.join("settings.json") }
 pub static SETTINGS: Lazy<RwLock<Map<String, Value>>> = Lazy::new(|| {
     let mut s = defaults();
     if let Some(Value::Object(saved)) = read_json(&settings_file()) { for (k, v) in saved { s.insert(k, v); } }
+    // папка игры, выбранная в установщике
+    if let Some(inst) = mccore::take_installer_settings(&DATA) {
+        for (k, v) in inst { s.insert(k, v); }
+        let _ = write_json(&settings_file(), &s);
+    }
     RwLock::new(s)
 });
 pub fn settings() -> Value { Value::Object(SETTINGS.read().clone()) }

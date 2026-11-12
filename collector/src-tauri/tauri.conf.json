@@ -47,7 +47,12 @@
         "languages": [
           "Russian"
         ],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "template": "../../installer/installer.nsi",
+        "installerHooks": "../../installer/collector.nsh",
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "icons/installer-header.bmp",
+        "sidebarImage": "icons/installer-sidebar.bmp"
       },
       "webviewInstallMode": {
         "type": "downloadBootstrapper",
