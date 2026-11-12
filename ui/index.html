@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MC Admin Panel</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="logo"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 22V12M21 7l-9 5-9-5"/></svg></div>
+      <div class="brand-text"><b>MC Admin Panel</b><span>серверы Minecraft</span></div>
+    </div>
+    <button class="search-btn" id="search-btn" title="Поиск и команды (Ctrl+K)"></button>
+    <nav class="nav" id="nav"></nav>
+    <div class="side-foot" id="side-foot"></div>
+  </aside>
+  <main class="content">
+    <header class="topbar" id="topbar"></header>
+    <div class="page" id="page"></div>
+  </main>
+</div>
+<div class="toasts" id="toasts"></div>
+<div class="jobs" id="jobs"></div>
+<script src="js/icons.js"></script>
+<script src="js/commands.js"></script>
+<script src="js/api.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
