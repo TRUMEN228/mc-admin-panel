@@ -42,7 +42,7 @@ function renderNav() {
     `<div class="sec"><span>Справка</span></div>` +
     navItem('cmds', 'book', 'Команды сервера', p === 'cmds');
 }
-const navMeta = (s) => (s.status === 'running' && s.players.length ? `${s.players.length} ${ic('users')}`.replace('class="ic ', 'style="width:12px;height:12px;vertical-align:-2px" class="ic ') : '');
+const navMeta = (s) => (s.status === 'running' && s.players.length ? `${s.players.length} ${ic('users')}` : '');
 function renderFoot() {
   $('#side-foot').innerHTML = `<div class="sys-mini" id="sys-mini">${sysMini()}</div>` +
     navItem('settings', 'settings', 'Настройки', cur.page === 'settings') +
@@ -445,7 +445,7 @@ async function doSearch(more = false) {
     const html = r.hits.map((m) => `<div class="list-item">${m.icon ? `<img src="${esc(m.icon)}" loading="lazy" alt="">` : `<div class="ph">${ic('package')}</div>`}
       <div class="grow"><div class="row nowrap"><span class="t ellipsis">${esc(m.title)}</span>
         ${m.client === 'unsupported' ? '<span class="badge blue">сервер</span>' : m.server === 'unsupported' ? '<span class="badge yellow">клиент</span>' : ''}</div>
-        <div class="d">${esc(m.desc)}</div><div class="small dim">${ic('download').replace('class="ic ', 'style="width:12px;height:12px;vertical-align:-2px" class="ic ')} ${fmtNum(m.downloads)} · ${esc(m.author || '')}</div></div>
+        <div class="d">${esc(m.desc)}</div><div class="small dim">${ic('download')} ${fmtNum(m.downloads)} · ${esc(m.author || '')}</div></div>
       <button class="sm" onclick="installMod(this,'${esc(m.id)}')">${ic('download')}Установить</button></div>`).join('');
     $('#more-btn')?.remove();
     if (more) res.insertAdjacentHTML('beforeend', html); else res.innerHTML = html || `<div class="empty">${ic('search')}<p>Ничего не найдено</p></div>`;
