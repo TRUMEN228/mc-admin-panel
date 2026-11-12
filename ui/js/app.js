@@ -11,13 +11,18 @@ const S = { servers: [], settings: {}, sets: [], sys: null, info: {} };
 let cur = {};
 const srvById = (id) => S.servers.find((s) => s.id === id);
 const loaderName = (l) => LOADERS[l]?.name || l;
+const srvIco = (s) => (s.icon ? `<img class="srv-img" src="${s.icon}" alt="">` : ic(LOADERS[s.loader]?.icon || 'server'));
 
 // ---------- тема ----------
+const THEMES = [['hybrid', 'Гибрид', '#0a0b0f', 'linear-gradient(90deg,#10b981,#06b6d4)', '#2b2e3a'], ['light', 'Светлая', '#eef1f7', 'linear-gradient(90deg,#6366f1,#14b8a6)', '#cbd5e1'],
+  ['glow', 'Неон', '#050507', 'linear-gradient(90deg,#a855f7,#f97316)', '#2a2a33'], ['calm', 'Спокойная', '#262b35', '#88c0d0', '#3b4252']];
+const themeId = () => { const t = S.settings.theme; return THEMES.some((x) => x[0] === t) ? t : t === 'light' ? 'light' : 'hybrid'; };
 function applyTheme() {
-  const t = S.settings.theme || 'system';
-  if (t === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
-  if (NATIVE) T.window.getCurrentWindow().setTheme(t === 'system' ? null : t).catch(() => {});
+  const t = themeId();
+  document.documentElement.dataset.theme = t;
+  if (NATIVE) T.window.getCurrentWindow().setTheme(t === 'light' ? 'light' : 'dark').catch(() => {});
 }
+async function setThemeId(t) { S.settings = await api('settings.save', { theme: t }); applyTheme(); $$('#st-theme button').forEach((x) => x.classList.toggle('on', x.dataset.v === t)); }
 
 // ---------- каркас ----------
 function renderShell() {
@@ -26,7 +31,7 @@ function renderShell() {
   renderNav(); renderFoot();
 }
 function navItem(href, icon, label, on, extra = '') {
-  return `<a class="nav-item ${on ? 'on' : ''}" href="#${href}" title="${esc(label)}">${ic(icon)}<span class="lbl">${esc(label)}</span>${extra}</a>`;
+  return `<a class="nav-item ${on ? 'on' : ''}" href="#${href}" title="${esc(label)}">${icon.startsWith('<') ? icon : ic(icon)}<span class="lbl">${esc(label)}</span>${extra}</a>`;
 }
 function renderNav() {
   const p = cur.page;
@@ -34,7 +39,7 @@ function renderNav() {
     navItem('dash', 'home', 'Обзор', p === 'dash') +
     navItem('create', 'plus', 'Новый сервер', p === 'create') +
     `<div class="sec"><span>Серверы</span><button class="ghost icon sm" title="Импорт существующих" onclick="importDir('servers')">${ic('import')}</button></div>` +
-    (S.servers.length ? S.servers.map((s) => navItem(`server/${s.id}/console`, 'server', s.name, p === 'server' && cur.id === s.id,
+    (S.servers.length ? S.servers.map((s) => navItem(`server/${s.id}/console`, srvIco(s), s.name, p === 'server' && cur.id === s.id,
       `<span class="meta" id="nm-${s.id}">${navMeta(s)}</span><span class="dot ${s.status}" id="nd-${s.id}"></span>`)).join('')
       : `<div class="nav-item dim small" style="cursor:default"><span class="lbl">Пока пусто</span></div>`) +
     `<div class="sec"><span>Клиент</span></div>` +
@@ -46,7 +51,7 @@ const navMeta = (s) => (s.status === 'running' && s.players.length ? `${s.player
 function renderFoot() {
   $('#side-foot').innerHTML = `<div class="sys-mini" id="sys-mini">${sysMini()}</div>` +
     navItem('settings', 'settings', 'Настройки', cur.page === 'settings') +
-    `<a class="nav-item" onclick="toggleSide()" title="Свернуть панель (Ctrl+B)">${ic('sidebar')}<span class="lbl">Свернуть</span></a>`;
+    `<a class="nav-item" onclick="toggleSide()" title="Развернуть или свернуть меню (Ctrl+B)">${ic('sidebar')}<span class="lbl">Свернуть</span></a>`;
 }
 function sysMini() {
   const s = S.sys; if (!s) return '';
@@ -56,11 +61,11 @@ function sysMini() {
 }
 function toggleSide() {
   const c = $('#app').classList.toggle('collapsed');
-  try { localStorage.setItem('mcpanel-side', c ? '1' : ''); } catch {}
+  try { localStorage.setItem('mcpanel-side', c ? '' : 'open'); } catch {}
 }
-function setTop({ title, icon, crumbs, actions = '', sub = '', status }) {
+function setTop({ title, icon, crumbs, actions = '', sub = '', status, img }) {
   $('#topbar').innerHTML = `${crumbs ? `<div class="crumbs">${crumbs.map((c) => c[1] ? `<a href="#${c[1]}">${esc(c[0])}</a>` : `<span>${esc(c[0])}</span>`).join(ic('chevronRight'))}</div>` : ''}
-    <h1>${status ? `<span class="dot ${status}" id="top-dot"></span>` : icon ? ic(icon) : ''}<span class="t">${esc(title)}</span>${sub}</h1><div class="actions" id="top-actions">${actions}</div>`;
+    <h1>${img || ''}${status ? `<span class="dot ${status}" id="top-dot"></span>` : icon ? ic(icon) : ''}<span class="t">${esc(title)}</span>${sub}</h1><div class="actions"><button class="cmd-btn" onclick="openPalette()" title="Поиск и команды">${ic('search')}<span>Найти сервер, мод, команду…</span><span class="kbd">Ctrl K</span></button><span class="row" id="top-actions" style="gap:8px">${actions}</span></div>`;
   document.title = `${title} — MC Admin Panel`;
 }
 function setPage(html, fill = false) {
@@ -100,7 +105,10 @@ function live(s) {
 function handleEvent(m) {
   const s = m.id && srvById(m.id);
   switch (m.type) {
-    case 'job': return showJob(m.job);
+    case 'job':
+      if (m.job.status === 'done') feedPush('ok', 'check', m.job.title);
+      else if (m.job.status === 'error') feedPush('err', 'alert', `${m.job.title}: ошибка`);
+      return showJob(m.job);
     case 'servers': return loadServers().then(() => {
       renderNav();
       if (cur.page === 'dash') route();
@@ -109,6 +117,8 @@ function handleEvent(m) {
     case 'status':
       if (!s) return;
       if (m.status === 'starting' && s.status !== 'starting') { s.started = Date.now(); s.history = []; s.crash = null; const c = $('#crash-slot'); if (c && cur.id === s.id) c.innerHTML = ''; }
+      if (m.status === 'running' && s.status !== 'running') feedPush('ok', 'play', `«${s.name}» запущен`);
+      if (m.status === 'stopped' && s.status !== 'stopped' && !s.crash) feedPush('info', 'stop', `«${s.name}» остановлен`);
       s.status = m.status;
       if (m.status === 'stopped') { s.stats = null; s.players = []; }
       return live(s);
@@ -120,17 +130,26 @@ function handleEvent(m) {
     case 'players':
       if (!s) return;
       s.players = m.players; live(s);
+      if (m.player) feedPush(m.joined ? 'ok' : 'info', 'users', `${m.player} ${m.joined ? 'зашёл на' : 'вышел с'} «${s.name}»`);
       if (m.joined && !(cur.page === 'server' && cur.id === s.id && cur.tab === 'console')) toast(`${m.player} зашёл на «${s.name}»`, 'info', 3000);
       return;
     case 'crash':
       if (!s) return;
       s.crash = m.diag;
+      feedPush('err', 'alert', `«${s.name}» аварийно завершился`);
       toast(`«${s.name}» аварийно завершился\n${m.diag?.hints?.[0]?.title || 'Код выхода ' + m.code}`, 'error');
       if (cur.page === 'server' && cur.id === s.id && cur.tab === 'console') { const c = $('#crash-slot'); if (c) c.innerHTML = crashBanner(s); }
       return;
     case 'log': if (cur.page === 'server' && cur.id === m.id && cur.tab === 'console') appendLog(m.line); return;
     case 'backups': if (cur.page === 'server' && cur.id === m.id && cur.tab === 'backups') tBackups(srvById(m.id)); return;
-    case 'sys': S.sys = m; { const e = $('#sys-mini'); if (e) e.innerHTML = sysMini(); } if (cur.page === 'dash') dashTotals(); return;
+    case 'sys': {
+      S.sys = m;
+      S.sysHist.push([m.cpu, m.memTotal ? (m.memUsed / m.memTotal) * 100 : 0, S.servers.filter((x) => x.status === 'running').length, S.servers.reduce((a, x) => a + x.players.length, 0)]);
+      if (S.sysHist.length > 90) S.sysHist.shift();
+      const e = $('#sys-mini'); if (e) e.innerHTML = sysMini();
+      if (cur.page === 'dash') { dashTotals(); const r = $('#res'); if (r) r.innerHTML = resHtml(); }
+      return;
+    }
     case 'settings': return call('settings.get').then((v) => { S.settings = v; applyTheme(); });
     case 'sets': if (cur.page === 'sets') route(); return;
     case 'devices': PAIR_LISTENERS.forEach((f) => f(m)); renderDevices(); return;
@@ -179,30 +198,63 @@ function pDash() {
   if (!S.servers.length) return setPage(`<div class="card hero-empty empty"><div class="logo">${ic('cube')}</div><h3>Добро пожаловать в MC Admin Panel</h3>
     <p>Создайте первый сервер — панель сама скачает ядро и нужную версию Java.<br>Или подключите серверы, которые у вас уже есть.</p>
     <div class="row" style="justify-content:center"><button class="primary" onclick="go('create')">${ic('plus')}Создать сервер</button><button onclick="importDir('servers')">${ic('import')}Импортировать существующие</button></div></div>`);
-  setPage(`<div class="grid g4" id="totals" style="margin-bottom:18px">${totalsHtml()}</div>
-    <div class="tab-scroll"><div class="auto-grid">${S.servers.map((s) => `<div class="card srv-card" id="card-${s.id}">${srvCardInner(s)}</div>`).join('')}</div></div>`, true);
+  setPage(`<div class="dash"><div class="dash-main"><div class="grid g4" id="totals" style="margin-bottom:18px">${totalsHtml()}</div>
+    <div class="tab-scroll"><div class="auto-grid">${S.servers.map((s) => `<div class="card srv-card" id="card-${s.id}" onclick="cardOpen(event, '${s.id}')">${srvCardInner(s)}</div>`).join('')}</div></div></div>
+    <aside class="dash-side"><div class="card"><div class="card-head"><h3>${ic('bell')}События</h3></div><ul class="feed" id="feed">${feedHtml()}</ul></div>
+      <div class="card"><div class="card-head"><h3>${ic('cpu')}Ресурсы ПК</h3></div><div id="res">${resHtml()}</div></div></aside></div>`, true);
+  $('#totals')._t0 = performance.now(); countUp($('#totals'));
+}
+// плавный отсчёт чисел в сводке при открытии
+function countUp(root) {
+  $$('.v [data-n]', root).forEach((el) => {
+    const to = +el.dataset.n, dec = el.dataset.n.includes('.') ? 1 : 0, t0 = performance.now();
+    const step = (t) => { const k = Math.min(1, (t - t0) / 900), v = to * (1 - (1 - k) ** 3); el.textContent = dec ? v.toFixed(1).replace('.', ',') : Math.round(v); if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+}
+function resHtml() {
+  const s = S.sys; if (!s) return '<div class="dim small">Загрузка…</div>';
+  const mp = s.memTotal ? (s.memUsed / s.memTotal) * 100 : 0;
+  return `<div class="res-row"><span>Процессор</span><b>${Math.round(s.cpu)}%</b></div><div class="bar ${s.cpu > 85 ? 'bad' : s.cpu > 65 ? 'warn' : ''}"><i style="width:${s.cpu}%"></i></div>
+    <div class="res-row"><span>Память</span><b>${(s.memUsed / 1073741824).toFixed(1).replace('.', ',')} / ${(s.memTotal / 1073741824).toFixed(0)} ГБ</b></div><div class="bar ${mp > 90 ? 'bad' : mp > 75 ? 'warn' : ''}"><i style="width:${mp}%"></i></div>`;
+}
+// ---------- лента событий ----------
+const FEED_KEY = 'mcpanel-feed';
+S.feed = (() => { try { return JSON.parse(localStorage.getItem(FEED_KEY) || '[]'); } catch { return []; } })();
+S.sysHist = [];
+function feedPush(kind, icon, text) {
+  S.feed.unshift({ k: kind, i: icon, t: text, at: Date.now() }); S.feed.length = Math.min(S.feed.length, 40);
+  try { localStorage.setItem(FEED_KEY, JSON.stringify(S.feed)); } catch {}
+  const f = $('#feed'); if (f) f.innerHTML = feedHtml();
+}
+const ago = (t) => { const m = Math.floor((Date.now() - t) / 60000); return m < 1 ? 'только что' : m < 60 ? `${m} мин назад` : m < 1440 ? `${Math.floor(m / 60)} ч назад` : `${Math.floor(m / 1440)} д назад`; };
+function feedHtml() {
+  if (!S.feed.length) return '<li class="dim small">Здесь появятся заходы игроков, сбои, бэкапы и установки</li>';
+  return S.feed.slice(0, 12).map((e, i) => `<li class="${e.k}" style="animation-delay:${i * 50}ms"><span class="fi">${ic(e.i)}</span><div><p>${esc(e.t)}</p><time>${ago(e.at)}</time></div></li>`).join('');
 }
 function totalsHtml() {
   const run = S.servers.filter((s) => s.status === 'running'), players = S.servers.reduce((a, s) => a + s.players.length, 0);
   const sys = S.sys || { cpu: 0, memUsed: 0, memTotal: S.info.memTotal || 1 };
   const srvMem = S.servers.reduce((a, s) => a + (s.stats?.mem || 0), 0);
   const mp = (sys.memUsed / sys.memTotal) * 100;
-  return `<div class="metric"><div class="k">${ic('server')}Серверы</div><div class="v">${run.length}<small>из ${S.servers.length} работают</small></div></div>
-    <div class="metric"><div class="k">${ic('users')}Игроки онлайн</div><div class="v">${players}</div></div>
-    <div class="metric"><div class="k">${ic('cpu')}Процессор</div><div class="v">${Math.round(sys.cpu)}<small>%</small></div><div class="bar ${sys.cpu > 85 ? 'bad' : sys.cpu > 65 ? 'warn' : ''}" style="margin-top:8px"><i style="width:${sys.cpu}%"></i></div></div>
-    <div class="metric"><div class="k">${ic('memory')}Память</div><div class="v">${(sys.memUsed / 1073741824).toFixed(1).replace('.', ',')}<small>из ${(sys.memTotal / 1073741824).toFixed(0)} ГБ · серверы ${fmtBytes(srvMem)}</small></div><div class="bar ${mp > 90 ? 'bad' : mp > 75 ? 'warn' : ''}" style="margin-top:8px"><i style="width:${mp}%"></i></div></div>`;
+  const h = S.sysHist, gb = (sys.memUsed / 1073741824).toFixed(1);
+  return `<div class="metric"><div class="k">${ic('server')}Серверы</div><div class="v"><span data-n="${run.length}">${run.length}</span><small>из ${S.servers.length} работают</small></div>${sparkline(h.map((x) => x[2]), 'var(--chart-2)', Math.max(S.servers.length, 1))}</div>
+    <div class="metric"><div class="k">${ic('users')}Игроки онлайн</div><div class="v"><span data-n="${players}">${players}</span></div>${sparkline(h.map((x) => x[3]), 'var(--chart-3)')}</div>
+    <div class="metric"><div class="k">${ic('cpu')}Процессор ПК</div><div class="v"><span data-n="${Math.round(sys.cpu)}">${Math.round(sys.cpu)}</span><small>%</small></div>${sparkline(h.map((x) => x[0]), 'var(--chart-1)', 100)}</div>
+    <div class="metric"><div class="k">${ic('memory')}Память ПК</div><div class="v"><span data-n="${gb}">${gb.replace('.', ',')}</span><small>из ${(sys.memTotal / 1073741824).toFixed(0)} ГБ · серверы ${fmtBytes(srvMem)}</small></div>${sparkline(h.map((x) => x[1]), 'var(--violet)', 100)}</div>`;
 }
-const dashTotals = () => { const t = $('#totals'); if (t) t.innerHTML = totalsHtml(); };
+// сводка обновляется вживую; первые полторы секунды не трогаем, чтобы доиграла анимация появления
+const dashTotals = () => { const t = $('#totals'); if (!t || performance.now() - (t._t0 || 0) < 1500) return; t.classList.add('no-anim'); t.innerHTML = totalsHtml(); };
 function srvCardInner(s) {
   const st = STATUS[s.status], on = s.status !== 'stopped';
   const memMb = s.stats ? Math.round(s.stats.mem / 1048576) : 0;
-  return `<div class="head"><div class="srv-icon ${s.status}">${ic(LOADERS[s.loader]?.icon || 'server')}</div>
+  return `<div class="head"><div class="srv-icon ${s.status} ${s.icon ? 'has-img' : ''}">${srvIco(s)}</div>
       <div class="grow"><a class="name" href="#server/${s.id}/console">${esc(s.name)}</a><div class="small dim">${loaderName(s.loader)} ${esc(s.mcVersion)} · порт ${s.port}</div></div>
       <span class="badge ${st[1]}">${st[0]}</span></div>
     <div class="stats3"><div class="mini-stat"><div class="k">CPU</div><div class="v">${on && s.stats ? fmtCpu(s.stats.cpu) + '%' : '—'}</div></div>
       <div class="mini-stat"><div class="k">Память</div><div class="v">${on && s.stats ? fmtMb(memMb) : '—'}<span class="dim small"> / ${fmtMb(s.ram)}</span></div></div>
       <div class="mini-stat"><div class="k">Аптайм</div><div class="v">${on && s.started ? fmtDur(Date.now() - s.started) : '—'}</div></div></div>
-    ${dualChart(on ? s.history : [], s.ram)}
+    ${on ? dualChart(s.history, s.ram) : ""}
     <div class="players-line small">${on && s.players.length ? s.players.slice(0, 8).map((p) => `<img class="head-img" title="${esc(p)}" src="https://mc-heads.net/avatar/${encodeURIComponent(p)}/22" onerror="this.style.visibility='hidden'">`).join('') + `<span class="dim">&nbsp;${s.players.length} ${plural(s.players.length, 'игрок', 'игрока', 'игроков')}</span>`
       : `<span class="dim ellipsis">${!s.installed ? 'Идёт установка ядра и Java…' : on ? 'Нет игроков онлайн' : ['Сервер остановлен', s.autoStart && 'автозапуск', s.autoBackupMin && `автобэкап каждые ${s.autoBackupMin} мин`].filter(Boolean).join(' · ')}</span>`}</div>
     <div class="row card-actions">${ctrlButtons(s, true)}<span class="grow"></span><button class="sm ghost" onclick="go('server/${s.id}/console')">${ic('terminal')}Консоль</button></div>`;
@@ -336,7 +388,7 @@ function srvMetrics(s) {
 async function pServer(id, tab = 'console') {
   const s = srvById(id); if (!s) return go('dash');
   if (!TABS[tab]) tab = 'console';
-  setTop({ title: s.name, status: s.status, crumbs: [['Обзор', 'dash'], [s.name]],
+  setTop({ title: s.name, status: s.status, crumbs: [['Обзор', 'dash'], [s.name]], img: `<button class="top-ico" title="Сменить иконку" onclick="pickIcon('${s.id}')">${srvIco(s)}</button>`,
     sub: `<span class="badge">${ic(LOADERS[s.loader]?.icon || 'cube')}${loaderName(s.loader)} ${esc(s.mcVersion)}</span><span class="badge">${ic('wifi')}:${s.port}</span>`,
     actions: ctrlButtons(s) });
   // заголовок и метрики не перерисовываем при переключении вкладок
@@ -886,6 +938,8 @@ function tConfig(s) {
   const total = S.info.memTotal ? Math.floor(S.info.memTotal / 1048576) : 16384;
   const maxRam = Math.max(s.ram, Math.min(65536, Math.floor((total - 1024) / 512) * 512));
   $('#tab').innerHTML = `<div class="tab-scroll"><div style="max-width:960px"><div class="set-group-title">Запуск</div><div class="set-list">
+    <div class="set-item">${ic('image')}<div class="txt"><b>Иконка сервера</b><span>Видна в панели, в приложении на телефоне и в списке серверов Minecraft. Подойдёт любая картинка — она обрежется до квадрата 64×64</span></div>
+      <div class="ctl auto"><div class="srv-icon big ${s.icon ? 'has-img' : ''}">${srvIco(s)}</div><button class="sm" onclick="pickIcon('${s.id}')">${ic('upload')}Выбрать…</button>${s.icon ? `<button class="sm ghost" onclick="setIcon('${s.id}', '')">${ic('trash')}Убрать</button>` : ''}</div></div>
     <div class="set-item">${ic('text')}<div class="txt"><b>Название</b><span>Отображается в панели; папка бэкапов называется так же</span></div><div class="ctl"><input id="c-name" value="${esc(s.name)}"></div></div>
     <div class="set-item">${ic('memory')}<div class="txt"><b>Память</b><span>Максимальный размер кучи Java (-Xmx)</span></div><div class="ctl"><div class="ram-row" style="width:100%"><input type="range" id="c-ram" min="1024" max="${maxRam}" step="512" value="${s.ram}" oninput="$('#c-ramv').textContent=fmtMb(+this.value)"><span class="val" id="c-ramv">${fmtMb(s.ram)}</span></div></div></div>
     <div class="set-item">${ic('wifi')}<div class="txt"><b>Порт</b><span>Также меняется в server.properties</span></div><div class="ctl"><input id="c-port" type="number" value="${s.port}" style="width:120px"></div></div>
@@ -1038,7 +1092,8 @@ async function pSettings() {
   const item = (icon, t, d, ctl, auto) => `<div class="set-item">${ic(icon)}<div class="txt"><b>${t}</b><span>${d}</span></div><div class="ctl ${auto ? 'auto' : ''}">${ctl}</div></div>`;
   setPage(`<div style="max-width:960px">
     <div class="set-group-title">Оформление и поведение</div><div class="set-list">
-      ${item('sun', 'Тема', 'Как в системе, светлая или тёмная', `<div class="seg" id="st-theme">${[['system', 'Системная'], ['light', 'Светлая'], ['dark', 'Тёмная']].map(([k, t]) => `<button class="${(st.theme || 'system') === k ? 'on' : ''}" data-v="${k}">${t}</button>`).join('')}</div>`, true)}
+      <div class="set-item" style="flex-wrap:wrap">${ic('sun')}<div class="txt"><b>Тема оформления</b><span>Цвета, фон и эффекты интерфейса</span></div>
+        <div class="theme-pick" id="st-theme" style="margin-top:10px">${THEMES.map(([k, t, bg, ac, ln]) => `<button class="${themeId() === k ? 'on' : ''}" data-v="${k}" onclick="setThemeId('${k}')"><div class="sw" style="background:${bg}"><i style="background:${ac}"></i><i style="background:${ln}"></i><i style="background:${ln}"></i></div><span>${t}</span></button>`).join('')}</div></div>
       ${NATIVE ? item('bell', 'Уведомления Windows', 'Сбои серверов, завершение установки и ошибки бэкапов, когда окно свёрнуто', sw('st-notifications', st.notifications), true) : ''}
       ${NATIVE ? item('pin', 'Сворачивать в трей при закрытии', 'Крестик окна не останавливает серверы', sw('st-minimizeToTray', st.minimizeToTray), true) : ''}
       ${NATIVE ? item('power', 'Запускать вместе с Windows', 'Панель стартует свёрнутой в трей и поднимает серверы с флагом автозапуска' + (S.info.debug ? ' (недоступно в режиме разработки)' : ''), sw('st-launchAtLogin', st.launchAtLogin), true) : ''}
@@ -1077,10 +1132,6 @@ async function pSettings() {
       ${NATIVE ? item('download', 'Проверять обновления при запуске', 'Новые версии берутся из релизов на GitHub', sw('st-autoUpdateCheck', st.autoUpdateCheck !== false), true) : ''}
       ${NATIVE ? item('folder', 'Данные панели', esc(S.info.dataDir || ''), `<button class="sm" onclick="native.openPath(${attr(S.info.dataDir || '')})">${ic('external')}Открыть</button>`, true) : ''}
     </div></div>`);
-  $$('#st-theme button').forEach((b) => (b.onclick = async () => {
-    $$('#st-theme button').forEach((x) => x.classList.toggle('on', x === b));
-    S.settings = await api('settings.save', { theme: b.dataset.v }); applyTheme();
-  }));
   renderDevices();
 }
 // ---------- мобильное приложение ----------
@@ -1166,7 +1217,7 @@ function paletteItems() {
     ['Перейти', 'home', 'Обзор', () => go('dash')], ['Перейти', 'plus', 'Новый сервер', () => go('create')], ['Перейти', 'puzzle', 'Наборы модов', () => go('sets')],
     ['Перейти', 'book', 'Команды сервера', () => go('cmds')], ['Перейти', 'settings', 'Настройки', () => go('settings')],
     ['Действия', 'import', 'Импортировать серверы', () => importDir('servers')],
-    ['Действия', 'sun', 'Переключить тему', async () => { const t = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches) ? 'light' : 'dark'; S.settings = await api('settings.save', { theme: t }); applyTheme(); }],
+    ...THEMES.map(([k, t]) => ['Тема', 'sun', `Тема: ${t}`, () => setThemeId(k)]),
   ];
   for (const s of S.servers) {
     it.push(['Серверы', 'server', s.name, () => go(`server/${s.id}/console`), STATUS[s.status][0]]);
@@ -1240,10 +1291,13 @@ setInterval(() => { if (cur.page === 'dash' || cur.page === 'server') S.servers.
 
 // ---------- запуск ----------
 (async () => {
-  try { if (localStorage.getItem('mcpanel-side')) $('#app').classList.add('collapsed'); } catch {}
+  try { if (localStorage.getItem('mcpanel-side') !== 'open') $('#app').classList.add('collapsed'); } catch { $('#app').classList.add('collapsed'); }
+  document.addEventListener('pointermove', (e) => {
+    const c = e.target.closest?.('.card, .metric'); if (!c) return;
+    const r = c.getBoundingClientRect(); c.style.setProperty('--mx', e.clientX - r.left + 'px'); c.style.setProperty('--my', e.clientY - r.top + 'px');
+  }, { passive: true });
   try {
     [S.settings, S.info] = await Promise.all([call('settings.get'), call('system.info')]);
-    if (S.info.mica) document.documentElement.classList.add('mica');
     applyTheme();
     await loadServers();
     (await call('jobs')).filter((j) => j.status === 'running').forEach(showJob);
@@ -1254,3 +1308,29 @@ setInterval(() => { if (cur.page === 'dash' || cur.page === 'server') S.servers.
   if (NATIVE) T.core.invoke('ui_ready').catch(() => {});
   if (NATIVE && S.settings.autoUpdateCheck !== false && !S.info.debug) setTimeout(() => checkAppUpdate(false), 5000);
 })();
+// клик по карточке сервера открывает его страницу (кнопки и ссылки внутри работают как обычно)
+function cardOpen(e, id) { if (!e.target.closest('button, a, input, select, .head-img')) go(`server/${id}/console`); }
+
+// ---------- иконка сервера ----------
+function pickIcon(id) {
+  const i = document.createElement('input');
+  i.type = 'file'; i.accept = 'image/png,image/jpeg,image/webp,image/gif,image/bmp';
+  i.onchange = async () => {
+    const f = i.files[0]; if (!f) return;
+    try {
+      const img = await createImageBitmap(f);
+      const c = document.createElement('canvas'); c.width = c.height = 64;
+      const side = Math.min(img.width, img.height), g = c.getContext('2d');
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 64, 64);
+      await setIcon(id, c.toDataURL('image/png'));
+    } catch (e) { toast('Не удалось открыть картинку\n' + (e.message || e), 'error'); }
+  };
+  i.click();
+}
+async function setIcon(id, data) {
+  const r = await api('servers.setIcon', { id, data }).catch(() => null); if (!r) return;
+  const s = srvById(id); if (s) s.icon = r.icon;
+  toast(data ? 'Иконка обновлена' : 'Иконка убрана', 'ok');
+  renderNav(); route();
+}

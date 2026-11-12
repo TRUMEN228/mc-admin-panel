@@ -106,7 +106,27 @@ pub fn view(s: &Server) -> Value {
         v["stats"] = json!(r.stats);
         v["history"] = json!(r.history.iter().map(|h| json!([h.0, h.1, h.2, h.3])).collect::<Vec<_>>());
     });
+    v["icon"] = json!(icon_data(s));
     v
+}
+/// Иконка сервера (server-icon.png — её же показывает клиент Minecraft) как data-URL.
+fn icon_data(s: &Server) -> String {
+    use base64::Engine;
+    std::fs::read(Path::new(&s.dir).join("server-icon.png")).ok().filter(|b| b.len() < 256 * 1024)
+        .map(|b| format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(b))).unwrap_or_default()
+}
+/// Сменить иконку: PNG 64×64 (готовит интерфейс) в base64; пустая строка — убрать иконку.
+pub fn set_icon(id: &str, data: &str) -> Res<Value> {
+    use base64::Engine;
+    let s = get(id)?;
+    let p = Path::new(&s.dir).join("server-icon.png");
+    if data.is_empty() { let _ = std::fs::remove_file(&p); } else {
+        let b = base64::engine::general_purpose::STANDARD.decode(data.trim_start_matches("data:image/png;base64,")).map_err(|_| "Не удалось прочитать картинку".to_string())?;
+        if !b.starts_with(&[0x89, b'P', b'N', b'G']) || b.len() > 256 * 1024 { return Err("Нужна PNG-картинка до 256 КБ".into()); }
+        std::fs::write(&p, &b).ctx("Сохранение иконки")?;
+    }
+    emit(json!({ "type": "servers" }));
+    Ok(json!({ "icon": icon_data(&s) }))
 }
 pub fn all() -> Value { let l = LIST.lock().clone(); json!(l.iter().map(view).collect::<Vec<_>>()) }
 pub fn all_raw() -> Vec<Server> { LIST.lock().clone() }

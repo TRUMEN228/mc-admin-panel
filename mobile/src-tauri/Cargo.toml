@@ -1,6 +1,6 @@
 [package]
 name = "mc-admin-mobile"
-version = "1.0.0"
+version = "1.1.0"
 description = "Мобильный компаньон MC Admin Panel"
 edition = "2021"
 

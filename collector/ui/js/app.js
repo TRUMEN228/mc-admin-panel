@@ -17,11 +17,16 @@ const native = {
 const go = (h) => { if (location.hash === '#' + h) route(); else location.hash = h; };
 
 // ---------- тема ----------
+const THEMES = [['hybrid', 'Гибрид', '#0a0b0f', 'linear-gradient(90deg,#10b981,#06b6d4)', '#2b2e3a'], ['light', 'Светлая', '#eef1f7', 'linear-gradient(90deg,#6366f1,#14b8a6)', '#cbd5e1'],
+  ['glow', 'Неон', '#050507', 'linear-gradient(90deg,#a855f7,#f97316)', '#2a2a33'], ['calm', 'Спокойная', '#262b35', '#88c0d0', '#3b4252']];
+const themePick = (cur) => `<div class="theme-pick" id="st-theme">${THEMES.map(([k, t, bg, ac, ln]) => `<button class="${cur === k ? 'on' : ''}" data-v="${k}" onclick="setThemeId('${k}')"><div class="sw" style="background:${bg}"><i style="background:${ac}"></i><i style="background:${ln}"></i><i style="background:${ln}"></i></div><span>${t}</span></button>`).join('')}</div>`;
+const themeId = () => { const t = S.settings.theme; return THEMES.some((x) => x[0] === t) ? t : t === 'light' ? 'light' : 'hybrid'; };
 function applyTheme() {
-  const t = S.settings.theme || 'system';
-  if (t === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
-  T.window.getCurrentWindow().setTheme(t === 'system' ? null : t).catch(() => {});
+  const t = themeId();
+  document.documentElement.dataset.theme = t;
+  T.window.getCurrentWindow().setTheme(t === 'light' ? 'light' : 'dark').catch(() => {});
 }
+async function setThemeId(t) { S.settings = await api('settings.save', { theme: t }); applyTheme(); $$('#st-theme button').forEach((x) => x.classList.toggle('on', x.dataset.v === t)); }
 
 // ---------- каркас ----------
 function navItem(href, icon, label, on, extra = '') {
@@ -349,7 +354,7 @@ async function pSettings() {
   const item = (icon, t, d, ctl, auto) => `<div class="set-item">${ic(icon)}<div class="txt"><b>${t}</b><span>${d}</span></div><div class="ctl ${auto ? 'auto' : ''}">${ctl}</div></div>`;
   setPage(`<div style="max-width:960px">
     <div class="set-group-title">Основное</div><div class="set-list">
-      ${item('sun', 'Тема', 'Как в системе, светлая или тёмная', `<div class="seg" id="st-theme">${[['system', 'Системная'], ['light', 'Светлая'], ['dark', 'Тёмная']].map(([k, t]) => `<button class="${(st.theme || 'system') === k ? 'on' : ''}" data-v="${k}">${t}</button>`).join('')}</div>`, true)}
+      <div class="set-item" style="flex-wrap:wrap">${ic('sun')}<div class="txt"><b>Тема оформления</b><span>Цвета, фон и эффекты интерфейса</span></div><div style="width:100%;margin-top:10px">${themePick(themeId())}</div></div>
       ${item('users', 'Автор сборок', 'Подставляется в новые сборки', inp('author'))}
       ${item('cube', 'Папка Minecraft', 'Куда ставить моды кнопкой «В мой Minecraft» (обычно %APPDATA%\\.minecraft)', dir('minecraftDir'))}
       ${item('download', 'Папка для экспорта', 'Куда по умолчанию сохранять .mrpack', dir('exportDir'))}
@@ -363,7 +368,6 @@ async function pSettings() {
       ${item('layers', 'MC Mod Collector ' + esc(S.info.version || ''), S.info.portable ? 'Портативная версия — данные рядом с программой' : 'Сборки хранятся в ' + esc(S.info.dataDir || ''), `<button class="sm" id="upd-check" onclick="checkAppUpdate(true)">${ic('refresh')}Проверить обновления</button>`, true)}
       ${item('download', 'Проверять обновления при запуске', 'Новые версии берутся из релизов на GitHub', sw('st-autoUpdateCheck', st.autoUpdateCheck !== false), true)}
     </div></div>`);
-  $$('#st-theme button').forEach((b) => (b.onclick = async () => { $$('#st-theme button').forEach((x) => x.classList.toggle('on', x === b)); S.settings = await api('settings.save', { theme: b.dataset.v }); applyTheme(); }));
 }
 async function browse(sel) { const p = await T.dialog.open({ directory: true, defaultPath: $(sel).value || undefined }); if (p) $(sel).value = p; }
 async function saveSettings() {
@@ -414,7 +418,7 @@ T.webview.getCurrentWebview().onDragDropEvent((e) => {
 (async () => {
   try {
     [S.settings, S.info] = await Promise.all([call('settings.get'), call('system.info')]);
-    if (S.info.mica) document.documentElement.classList.add('mica');
+    document.addEventListener('pointermove', (e) => { const c = e.target.closest?.('.card, .metric'); if (!c) return; const r = c.getBoundingClientRect(); c.style.setProperty('--mx', e.clientX - r.left + 'px'); c.style.setProperty('--my', e.clientY - r.top + 'px'); }, { passive: true });
     applyTheme();
     await loadPacks();
     (await call('jobs')).filter((j) => j.status === 'running').forEach(showJob);

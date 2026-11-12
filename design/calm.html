@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>7 · Спокойный</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0} button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+.ic{width:18px;height:18px;flex-shrink:0}
+body{min-height:100vh;overflow-x:hidden}
+.stage{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:32px;padding:28px;max-width:1680px;margin:0 auto;align-items:start}
+.cap{grid-column:1/-1;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.cap h1{font-size:15px;letter-spacing:.08em;text-transform:uppercase} .cap p{font-size:13px;opacity:.65}
+.app{display:grid;grid-template-columns:76px 1fr;height:820px;overflow:hidden;position:relative}
+.rail{display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px 0}
+.rail .logo{width:42px;height:42px;display:grid;place-items:center;margin-bottom:14px}
+.rail a{width:52px;height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10px;cursor:pointer;position:relative}
+.rail a .ic{width:20px;height:20px} .rail .grow{flex:1}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.top{display:flex;align-items:center;gap:14px;padding:16px 24px}
+.top h2{font-size:22px;flex:1}
+.cmd{display:flex;align-items:center;gap:10px;width:340px;height:40px;padding:0 14px;font-size:13.5px}
+.cmd kbd{margin-left:auto;font:11px inherit;padding:2px 6px}
+.iconbtn{width:40px;height:40px;display:grid;place-items:center;position:relative}
+.iconbtn .badge{position:absolute;top:8px;right:9px;width:8px;height:8px;border-radius:50%}
+.content{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px;padding:4px 24px 24px;min-height:0}
+.col{display:flex;flex-direction:column;gap:20px;min-height:0;overflow:auto;scrollbar-width:none}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.kpi{padding:16px 16px 0;position:relative;overflow:hidden;animation:rise .6s var(--ease) both;animation-delay:calc(var(--i)*70ms)}
+.kpi .k{display:flex;align-items:center;gap:7px;font-size:12.5px}
+.kpi .v{font-size:30px;margin:6px 0 2px;font-variant-numeric:tabular-nums} .kpi .v small{font-size:14px;margin-left:3px}
+.kpi .d{font-size:12px}
+.spark{display:block;width:calc(100% + 32px);height:46px;margin:8px -16px 0}
+.spark .line{fill:none;stroke-width:2;vector-effect:non-scaling-stroke;stroke-dasharray:400;stroke-dashoffset:400;animation:draw 1.6s var(--ease) .3s forwards}
+.sec-h{display:flex;align-items:center;gap:10px} .sec-h h4{font-size:15px;flex:1}
+.seg{display:flex;padding:3px;gap:2px} .seg button{padding:6px 12px;font-size:12.5px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.srv{position:relative;overflow:hidden;padding:16px;display:flex;flex-direction:column;gap:14px;animation:rise .6s var(--ease) both;animation-delay:calc(200ms + var(--i)*80ms);transition:transform .35s var(--ease),box-shadow .35s var(--ease),border-color .35s}
+.srv:hover{transform:translateY(-4px)}
+.srv-art{position:absolute;inset:0 0 auto;height:64px;opacity:.55;pointer-events:none}
+.srv header{display:flex;align-items:center;gap:10px;position:relative}
+.srv .nm{flex:1;min-width:0} .srv h3{font-size:16px} .srv .nm p{font-size:12px;margin-top:2px}
+.dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;position:relative}
+.running .dot::after,.starting .dot::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid currentColor;animation:ping 1.8s ease-out infinite}
+.pill{font-size:11.5px;padding:4px 9px;white-space:nowrap}
+.meters{display:grid;gap:9px} .meters>div{display:grid;grid-template-columns:1fr auto;align-items:center;gap:3px 8px;font-size:12px}
+.meters span{display:flex;align-items:center;gap:6px} .meters span .ic{width:14px;height:14px}
+.meters b{font-size:13px;font-variant-numeric:tabular-nums} .meters b small{font-weight:400;opacity:.6}
+.bar{grid-column:1/-1;display:block;height:5px;overflow:hidden} .bar em{display:block;height:100%;transform-origin:left;animation:grow 1.2s var(--ease) .5s both}
+.off-note{font-size:12.5px;padding:18px 0 24px;text-align:center}
+.srv footer{display:flex;align-items:center;gap:8px} .up{display:flex;align-items:center;gap:5px;font-size:12px;flex:1} .up .ic{width:14px;height:14px}
+.acts{display:flex;gap:6px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:36px;padding:0 14px;font-size:13.5px;transition:all .2s var(--ease)}
+.btn.sm{height:32px;padding:0 10px;font-size:12.5px} .btn.sm .ic{width:16px;height:16px}
+.btn:active{transform:scale(.96)}
+.add{display:grid;place-items:center;align-content:center;gap:8px;min-height:180px;font-size:13.5px;animation:rise .6s var(--ease) both;animation-delay:700ms;cursor:pointer;transition:all .3s var(--ease)}
+.add .ic{width:28px;height:28px}
+.side{display:flex;flex-direction:column;gap:16px;min-height:0}
+.panel{padding:16px;animation:rise .6s var(--ease) both;animation-delay:300ms}
+.panel h4{font-size:14px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.feed{list-style:none;display:flex;flex-direction:column;gap:12px}
+.feed li{display:flex;gap:10px;font-size:12.5px;animation:slide .5s var(--ease) both;animation-delay:calc(500ms + var(--i)*90ms)}
+.feed .fi{width:30px;height:30px;display:grid;place-items:center;flex-shrink:0} .feed .fi .ic{width:15px;height:15px}
+.feed time{font-size:11.5px;opacity:.55}
+.sys .row{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:6px}
+.sys .bar{height:7px;margin-bottom:14px}
+.phone{width:340px;height:700px;padding:12px;position:sticky;top:28px;animation:rise .8s var(--ease) both .4s}
+.screen{height:100%;overflow:hidden;display:flex;flex-direction:column;position:relative}
+.p-top{padding:30px 18px 10px} .p-top small{font-size:12px;display:flex;align-items:center;gap:6px} .p-top h3{font-size:24px;margin-top:4px}
+.p-hero{margin:6px 14px 12px;padding:16px;position:relative;overflow:hidden}
+.p-hero .r{display:flex;justify-content:space-between;align-items:end} .p-hero b{font-size:34px} .p-hero span{font-size:12px}
+.p-list{flex:1;padding:0 14px;display:flex;flex-direction:column;gap:9px;overflow:hidden}
+.p-srv{display:flex;align-items:center;gap:12px;padding:13px 14px;animation:rise .5s var(--ease) both;animation-delay:calc(700ms + var(--i)*80ms)}
+.p-srv>div{flex:1;min-width:0} .p-srv b{display:block;font-size:14.5px} .p-srv small{font-size:12px;opacity:.6} .p-meta{font-size:13px;font-variant-numeric:tabular-nums}
+.p-nav{display:flex;justify-content:space-around;padding:10px 0 16px;margin:10px 12px 0}
+.p-nav a{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10.5px;padding:6px 14px}
+.fab{position:absolute;right:18px;bottom:84px;width:52px;height:52px;display:grid;place-items:center}
+@keyframes rise{from{opacity:0;transform:translateY(16px) scale(.98)}}
+@keyframes slide{from{opacity:0;transform:translateX(14px)}}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes grow{from{transform:scaleX(0)}}
+@keyframes ping{0%{transform:scale(.6);opacity:.9}100%{transform:scale(1.9);opacity:0}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.spark .line{stroke-dashoffset:0}}
+@media (max-width:1250px){.stage{grid-template-columns:1fr}.phone{position:static;margin:0 auto}.app{height:auto}.content{grid-template-columns:1fr}}
+:root{--ease:cubic-bezier(.2,.8,.2,1)}
+
+body.calm{font-family:"Manrope","Inter",system-ui,sans-serif;color:#e5e9f0;background:#1f232b}
+.calm h1,.calm h2,.calm h3,.calm h4,.calm .v{font-weight:700;letter-spacing:-.01em}
+.calm .bg{position:fixed;inset:0;z-index:-1;background:linear-gradient(160deg,#252a34,#1b1e25)}
+.calm .app,.calm .phone{background:#262b35;border-radius:22px;box-shadow:0 30px 60px -30px #0009,inset 0 1px 0 #ffffff0a}
+.calm .phone{border-radius:44px;padding:10px}.calm .screen{border-radius:34px;background:#232731}
+.calm .rail{background:#232731}
+.calm .rail .logo{border-radius:14px;background:#88c0d0;color:#1f232b}
+.calm .rail a{border-radius:14px;color:#7b8394}.calm .rail a:hover{color:#e5e9f0;background:#2c323d}
+.calm .rail a.on{color:#88c0d0;background:#2e3440}
+.calm .cmd,.calm .iconbtn,.calm .seg{background:#2e3440;border-radius:12px;color:#7b8394}
+.calm .cmd kbd{background:#3b4252;border-radius:6px;color:#c0c6d2}
+.calm .iconbtn .badge{background:#ebcb8b}
+.calm .kpi,.calm .srv,.calm .panel,.calm .p-srv,.calm .p-hero{background:#2e3440;border-radius:18px;box-shadow:0 10px 24px -16px #000a}
+.calm .kpi .k,.calm .kpi .d,.calm .srv .nm p,.calm .meters span,.calm .up,.calm .off-note,.calm .p-srv small,.calm .p-top small,.calm .p-hero span,.calm .feed time{color:#7b8394}
+.calm .spark .line{stroke:#88c0d0;stroke-width:2.2}.calm .spark .area{fill:#88c0d0;opacity:.1}
+.calm .kpi:nth-child(2) .line{stroke:#a3be8c}.calm .kpi:nth-child(2) .area{fill:#a3be8c}.calm .kpi:nth-child(3) .line{stroke:#ebcb8b}.calm .kpi:nth-child(3) .area{fill:#ebcb8b}.calm .kpi:nth-child(4) .line{stroke:#b48ead}.calm .kpi:nth-child(4) .area{fill:#b48ead}
+.calm .srv:hover{transform:translateY(-5px);box-shadow:0 24px 40px -20px #000}
+.calm .srv-art{display:none}
+.calm .dot{background:#4c566a;color:#4c566a}.calm .running .dot{background:#a3be8c;color:#a3be8c}.calm .starting .dot{background:#ebcb8b;color:#ebcb8b}
+.calm .pill{border-radius:99px;background:#3b4252;color:#9aa3b5}.calm .running .pill{background:#a3be8c22;color:#a3be8c}.calm .starting .pill{background:#ebcb8b22;color:#ebcb8b}
+.calm .bar{height:6px;background:#3b4252;border-radius:99px}.calm .bar em{border-radius:99px;background:#88c0d0}
+.calm .btn{border-radius:12px;font-weight:600}.calm .btn.primary{background:#88c0d0;color:#1f232b}.calm .btn.primary:hover{background:#8fbcbb}
+.calm .btn.ghost{background:#3b4252;color:#d8dee9}.calm .btn.ghost:hover{background:#434c5e}
+.calm .seg button{border-radius:9px;color:#7b8394}.calm .seg .on{background:#3b4252;color:#e5e9f0}
+.calm .add{border:2px dashed #3b4252;border-radius:18px;color:#7b8394}.calm .add:hover{border-color:#88c0d0;color:#88c0d0}
+.calm .feed .fi{border-radius:11px;background:#3b4252}.calm .feed .ok .fi{color:#a3be8c}.calm .feed .info .fi{color:#88c0d0}.calm .feed .warn .fi{color:#ebcb8b}.calm .feed .err .fi{color:#bf616a}
+.calm .p-nav{background:#2e3440;border-radius:22px}.calm .p-nav a{color:#7b8394;border-radius:14px}.calm .p-nav a.on{color:#88c0d0;background:#3b4252}
+.calm .fab{border-radius:18px;background:#88c0d0;color:#1f232b}
+.calm .p-hero .line{stroke:#a3be8c}.calm .p-hero .area{fill:#a3be8c}.calm .cap h1{color:#88c0d0}
+
+</style></head>
+<body class="calm">
+<div class="bg"></div>
+<div class="stage">
+  <div class="cap"><h1>7 · Спокойный</h1><p>Демо стиля. Раскладка: узкая навигация слева, поиск/команды сверху (Ctrl+K), сводка, серверы плиткой, лента событий и ресурсы ПК справа. Справа — мобильное приложение в том же стиле.</p></div>
+  <div class="app">
+    <nav class="rail"><div class="logo"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg></div><a class="on" title="Обзор"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Обзор</span></a><a class="" title="Серверы"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg><span>Серверы</span></a><a class="" title="Моды"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"/></svg><span>Моды</span></a><a class="" title="Бэкапы"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></svg><span>Бэкапы</span></a><a class="" title="Сеть"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><span>Сеть</span></a><a class="" title="Настройки"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Настройки</span></a><div class="grow"></div><a title="Телефон"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg><span>Телефон</span></a></nav>
+    <div class="main">
+      <div class="top"><h2>Обзор</h2><div class="cmd"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>Найти сервер, мод, команду…<kbd>Ctrl K</kbd></div>
+        <button class="iconbtn"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10 21a2 2 0 0 0 4 0"/></svg><span class="badge"></span></button><button class="btn primary"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Новый сервер</button></div>
+      <div class="content">
+        <div class="col">
+          <div class="kpis">
+            <div class="kpi" style="--i:0"><div class="k"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>Серверы</div><div class="v"><span data-count="2">0</span><small>/ 5</small></div><div class="d">работают сейчас</div><svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none"><path class="area" d="M0.0,13.8 L3.7,27.2 L7.4,29.4 L11.1,14.0 L14.8,21.3 L18.5,46.8 L22.2,50.1 L25.9,44.1 L29.6,63.7 L33.3,84.7 L37.0,76.1 L40.7,68.4 L44.4,83.5 L48.1,84.7 L51.9,59.9 L55.6,50.0 L59.3,58.1 L63.0,44.7 L66.7,19.2 L70.4,20.9 L74.1,32.4 L77.8,20.3 L81.5,11.5 L85.2,32.5 L88.9,48.7 L92.6,41.3 L96.3,47.6 L100.0,74.7 L100,100 L0,100 Z"/><path class="line" d="M0.0,13.8 L3.7,27.2 L7.4,29.4 L11.1,14.0 L14.8,21.3 L18.5,46.8 L22.2,50.1 L25.9,44.1 L29.6,63.7 L33.3,84.7 L37.0,76.1 L40.7,68.4 L44.4,83.5 L48.1,84.7 L51.9,59.9 L55.6,50.0 L59.3,58.1 L63.0,44.7 L66.7,19.2 L70.4,20.9 L74.1,32.4 L77.8,20.3 L81.5,11.5 L85.2,32.5 L88.9,48.7 L92.6,41.3 L96.3,47.6 L100.0,74.7"/></svg></div>
+            <div class="kpi" style="--i:1"><div class="k"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/></svg>Игроки</div><div class="v"><span data-count="9">0</span><small>онлайн</small></div><div class="d">пик сегодня — 14</div><svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none"><path class="area" d="M0.0,39.6 L3.7,35.2 L7.4,32.9 L11.1,58.0 L14.8,75.2 L18.5,65.9 L22.2,68.0 L25.9,88.4 L29.6,86.3 L33.3,64.6 L37.0,63.6 L40.7,70.9 L44.4,51.1 L48.1,27.7 L51.9,32.6 L55.6,36.1 L59.3,16.2 L63.0,9.7 L66.7,30.1 L70.4,37.3 L74.1,27.3 L77.8,40.1 L81.5,67.2 L85.2,68.8 L88.9,61.2 L92.6,77.8 L96.3,91.9 L100.0,75.8 L100,100 L0,100 Z"/><path class="line" d="M0.0,39.6 L3.7,35.2 L7.4,32.9 L11.1,58.0 L14.8,75.2 L18.5,65.9 L22.2,68.0 L25.9,88.4 L29.6,86.3 L33.3,64.6 L37.0,63.6 L40.7,70.9 L44.4,51.1 L48.1,27.7 L51.9,32.6 L55.6,36.1 L59.3,16.2 L63.0,9.7 L66.7,30.1 L70.4,37.3 L74.1,27.3 L77.8,40.1 L81.5,67.2 L85.2,68.8 L88.9,61.2 L92.6,77.8 L96.3,91.9 L100.0,75.8"/></svg></div>
+            <div class="kpi" style="--i:2"><div class="k"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>CPU ПК</div><div class="v"><span data-count="34" id="cpu">0</span><small>%</small></div><div class="d">Ryzen 7 · 16 потоков</div><svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none"><path class="area" d="M0.0,49.7 L3.7,46.6 L7.4,69.6 L11.1,86.0 L14.8,73.8 L18.5,69.8 L22.2,85.4 L25.9,80.7 L29.6,55.1 L33.3,49.8 L37.0,56.7 L40.7,38.8 L44.4,16.2 L48.1,22.9 L51.9,32.0 L55.6,17.5 L59.3,13.9 L63.0,37.8 L66.7,49.8 L70.4,41.6 L74.1,52.9 L77.8,79.2 L81.5,79.9 L85.2,67.6 L88.9,78.4 L92.6,89.2 L96.3,69.9 L100.0,51.9 L100,100 L0,100 Z"/><path class="line" d="M0.0,49.7 L3.7,46.6 L7.4,69.6 L11.1,86.0 L14.8,73.8 L18.5,69.8 L22.2,85.4 L25.9,80.7 L29.6,55.1 L33.3,49.8 L37.0,56.7 L40.7,38.8 L44.4,16.2 L48.1,22.9 L51.9,32.0 L55.6,17.5 L59.3,13.9 L63.0,37.8 L66.7,49.8 L70.4,41.6 L74.1,52.9 L77.8,79.2 L81.5,79.9 L85.2,67.6 L88.9,78.4 L92.6,89.2 L96.3,69.9 L100.0,51.9"/></svg></div>
+            <div class="kpi" style="--i:3"><div class="k"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 11v2M10 11v2M14 11v2M18 11v2"/></svg>Память ПК</div><div class="v"><span data-count="18">0</span><small>/ 32 ГБ</small></div><div class="d">серверам выделено 24 ГБ</div><svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none"><path class="area" d="M0.0,79.7 L3.7,90.4 L7.4,71.0 L11.1,55.3 L14.8,63.1 L18.5,57.3 L22.2,29.7 L25.9,21.9 L29.6,33.6 L33.3,25.4 L37.0,9.0 L40.7,21.8 L44.4,42.1 L48.1,37.5 L51.9,36.5 L55.6,62.2 L59.3,77.8 L63.0,67.5 L66.7,69.8 L70.4,89.1 L74.1,84.6 L77.8,62.1 L81.5,61.4 L85.2,67.7 L88.9,46.8 L92.6,24.5 L96.3,30.8 L100.0,34.2 L100,100 L0,100 Z"/><path class="line" d="M0.0,79.7 L3.7,90.4 L7.4,71.0 L11.1,55.3 L14.8,63.1 L18.5,57.3 L22.2,29.7 L25.9,21.9 L29.6,33.6 L33.3,25.4 L37.0,9.0 L40.7,21.8 L44.4,42.1 L48.1,37.5 L51.9,36.5 L55.6,62.2 L59.3,77.8 L63.0,67.5 L66.7,69.8 L70.4,89.1 L74.1,84.6 L77.8,62.1 L81.5,61.4 L85.2,67.7 L88.9,46.8 L92.6,24.5 L96.3,30.8 L100.0,34.2"/></svg></div>
+          </div>
+          <div class="sec-h"><h4>Серверы</h4><div class="seg"><button class="on">Все</button><button>Работают</button><button>Остановлены</button></div></div>
+          <div class="grid"><article class="srv running" style="--i:0">
+      <div class="srv-art art-a"></div>
+      <header><span class="dot"></span><div class="nm"><h3>Survival</h3><p>Fabric 1.21.11 · :25560</p></div><span class="pill">Работает</span></header>
+      <div class="meters">
+        <div><span><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>CPU</span><b>23,4%</b><i class="bar"><em style="width:23.4%"></em></i></div>
+        <div><span><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 11v2M10 11v2M14 11v2M18 11v2"/></svg>RAM</span><b>2,1 <small>/ 6 ГБ</small></b><i class="bar"><em style="width:35%"></em></i></div>
+        <div><span><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/></svg>Игроки</span><b>7 <small>/ 20</small></b><i class="bar"><em style="width:35%"></em></i></div>
+      </div>
+      <footer><span class="up"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>3 д 4 ч</span><div class="acts"><button class="btn ghost sm"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></svg></button><button class="btn ghost sm"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button><button class="btn ghost sm"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5M12 19h8"/></svg></button></div></footer>
+    </article><article class="srv running" style="--i:1">
+      <div class="srv-art art-b"></div>
+      <header><span class="dot"></span><div class="nm"><h3>Creative</h3><p>Paper 1.21.4 · :25561</p></div><span class="pill">Работает</span></header>
+      <div class="meters">
+        <div><span><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>CPU</span><b>6,2%</b><i class="bar"><em style="width:6.2%"></em></i></div>
+        <div><span><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 11v2M10 11v2M14 11v2M18 11v2"/></svg>RAM</span><b>1,4 <small>/ 4 ГБ</small></b><i class="bar"><em style="width:35%"></em></i></div>
+        <div><span><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/></svg>Игроки</span><b>2 <small>/ 20</small></b><i class="bar"><em style="width:10%"></em></i></div>
+      </div>
+      <footer><span class="up"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>18 ч</span><div class="acts"><button class="btn ghost sm"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></svg></button><button class="btn ghost sm"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button><button class="btn ghost sm"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5M12 19h8"/></svg></button></div></footer>
+    </article><article class="srv starting" style="--i:2">
+      <div class="srv-art art-c"></div>
+      <header><span class="dot"></span><div class="nm"><h3>Modpack RPG</h3><p>NeoForge 1.21.1 · :25562</p></div><span class="pill">Запуск…</span></header>
+      <div class="meters">
+        <div><span><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>CPU</span><b>41,0%</b><i class="bar"><em style="width:41.0%"></em></i></div>
+        <div><span><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 11v2M10 11v2M14 11v2M18 11v2"/></svg>RAM</span><b>3,8 <small>/ 8 ГБ</small></b><i class="bar"><em style="width:48%"></em></i></div>
+        <div><span><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/></svg>Игроки</span><b>0 <small>/ 10</small></b><i class="bar"><em style="width:0%"></em></i></div>
+      </div>
+      <footer><span class="up"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>—</span><div class="acts"><button class="btn ghost sm"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></svg></button><button class="btn ghost sm"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button><button class="btn ghost sm"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5M12 19h8"/></svg></button></div></footer>
+    </article><article class="srv stopped" style="--i:3">
+      <div class="srv-art art-d"></div>
+      <header><span class="dot"></span><div class="nm"><h3>Мини-игры</h3><p>Paper 1.20.4 · :25563</p></div><span class="pill">Остановлен</span></header>
+      <div class="off-note">Сервер остановлен · последний запуск вчера</div>
+      <footer><span class="up"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>—</span><div class="acts"><button class="btn primary sm"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4l13 8-13 8z"/></svg>Запустить</button><button class="btn ghost sm"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5M12 19h8"/></svg></button></div></footer>
+    </article><article class="srv stopped" style="--i:4">
+      <div class="srv-art art-e"></div>
+      <header><span class="dot"></span><div class="nm"><h3>Тест 1.19</h3><p>Vanilla 1.19.4 · :25564</p></div><span class="pill">Остановлен</span></header>
+      <div class="off-note">Сервер остановлен · последний запуск вчера</div>
+      <footer><span class="up"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>—</span><div class="acts"><button class="btn primary sm"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4l13 8-13 8z"/></svg>Запустить</button><button class="btn ghost sm"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5M12 19h8"/></svg></button></div></footer>
+    </article><div class="add"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Создать сервер<small>или импортировать .mrpack</small></div></div>
+        </div>
+        <div class="side">
+          <div class="panel"><h4><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10 21a2 2 0 0 0 4 0"/></svg>События</h4><ul class="feed"><li class="ok" style="--i:0"><span class="fi"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/></svg></span><div><p>Steve_228 зашёл на Survival</p><time>2 мин назад</time></div></li><li class="info" style="--i:1"><span class="fi"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></svg></span><div><p>Бэкап Creative создан · 412 МБ</p><time>14 мин назад</time></div></li><li class="warn" style="--i:2"><span class="fi"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l10 18H2zM12 10v4M12 17.5h.01"/></svg></span><div><p>Modpack RPG: долгий запуск (43 мода)</p><time>20 мин назад</time></div></li><li class="ok" style="--i:3"><span class="fi"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"/></svg></span><div><p>Обновлено 5 модов на Survival</p><time>1 ч назад</time></div></li><li class="err" style="--i:4"><span class="fi"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l10 18H2zM12 10v4M12 17.5h.01"/></svg></span><div><p>Мини-игры аварийно завершился</p><time>3 ч назад</time></div></li></ul></div>
+          <div class="panel sys"><h4><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>Ресурсы ПК</h4>
+            <div class="row"><span>Процессор</span><b>34%</b></div><i class="bar"><em style="width:34%"></em></i>
+            <div class="row"><span>Память</span><b>18 / 32 ГБ</b></div><i class="bar"><em style="width:56%"></em></i>
+            <div class="row"><span>Диск D:</span><b>212 / 931 ГБ</b></div><i class="bar"><em style="width:23%"></em></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="phone"><div class="screen">
+    <div class="p-top"><small><span class="dot" style="width:8px;height:8px"></span>DENIS · подключено</small><h3>Серверы</h3></div>
+    <div class="p-hero"><div class="r"><div><span>Игроков онлайн</span><br><b>9</b></div><div style="text-align:right"><span>CPU ПК</span><br><b style="font-size:22px">34%</b></div></div><svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none"><path class="area" d="M0.0,83.2 L3.7,61.4 L7.4,41.9 L11.1,48.1 L14.8,44.7 L18.5,19.5 L22.2,13.3 L25.9,29.5 L29.6,27.5 L33.3,15.0 L37.0,30.0 L40.7,54.2 L44.4,52.4 L48.1,50.0 L51.9,73.2 L55.6,87.6 L59.3,73.8 L63.0,69.9 L66.7,84.5 L70.4,77.6 L74.1,51.5 L77.8,47.1 L81.5,53.6 L85.2,35.0 L88.9,13.9 L92.6,22.5 L96.3,31.7 L100.0,17.8 L100,100 L0,100 Z"/><path class="line" d="M0.0,83.2 L3.7,61.4 L7.4,41.9 L11.1,48.1 L14.8,44.7 L18.5,19.5 L22.2,13.3 L25.9,29.5 L29.6,27.5 L33.3,15.0 L37.0,30.0 L40.7,54.2 L44.4,52.4 L48.1,50.0 L51.9,73.2 L55.6,87.6 L59.3,73.8 L63.0,69.9 L66.7,84.5 L70.4,77.6 L74.1,51.5 L77.8,47.1 L81.5,53.6 L85.2,35.0 L88.9,13.9 L92.6,22.5 L96.3,31.7 L100.0,17.8"/></svg></div>
+    <div class="p-list"><div class="p-srv running" style="--i:0"><span class="dot"></span><div><b>Survival</b><small>Fabric 1.21.11</small></div><span class="p-meta">23,4%</span></div><div class="p-srv running" style="--i:1"><span class="dot"></span><div><b>Creative</b><small>Paper 1.21.4</small></div><span class="p-meta">6,2%</span></div><div class="p-srv starting" style="--i:2"><span class="dot"></span><div><b>Modpack RPG</b><small>NeoForge 1.21.1</small></div><span class="p-meta">41,0%</span></div><div class="p-srv stopped" style="--i:3"><span class="dot"></span><div><b>Мини-игры</b><small>Paper 1.20.4</small></div><span class="p-meta">выкл</span></div></div>
+    <button class="fab"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+    <nav class="p-nav"><a class="on"><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>Серверы</a><a><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10 21a2 2 0 0 0 4 0"/></svg>События</a><a><svg class="ic " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Настройки</a></nav>
+  </div></div>
+</div>
+<script>
+// счётчики и «живой» CPU
+document.querySelectorAll('[data-count]').forEach((el) => {
+  const to = +el.dataset.count, t0 = performance.now();
+  const step = (t) => { const k = Math.min(1, (t - t0 - 300) / 1100); if (k > 0) el.textContent = Math.round(to * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+});
+setInterval(() => { const c = document.getElementById('cpu'); c.textContent = 28 + Math.round(Math.random() * 14); }, 2500);
+// подсветка за курсором
+document.querySelectorAll('.srv,.kpi,.panel').forEach((el) => el.addEventListener('pointermove', (e) => {
+  const r = el.getBoundingClientRect(); el.style.setProperty('--mx', (e.clientX - r.left) + 'px'); el.style.setProperty('--my', (e.clientY - r.top) + 'px');
+}));
+
+</script>
+</body></html>

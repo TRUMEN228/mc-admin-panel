@@ -86,11 +86,12 @@ async function doPair(addresses, port, code, name) {
 async function loadServers() {
   try { S.servers = await call('servers.list'); S.online = true; } catch (e) { S.online = false; S.err = e.message; }
 }
+const sIco = (s) => `<div class="s-ico">${s.icon ? `<img src="${s.icon}" alt="">` : ic('server')}</div>`;
 function card(s) {
   const st = ST[s.status] || ST.stopped, on = s.status !== 'stopped';
   return `<div class="card srv" onclick="go('server','${s.id}')">
-    <div class="row nowrap"><span class="dot ${s.status}"></span><span class="t grow ellipsis">${esc(s.name)}</span><span class="badge ${st[1]}">${st[0]}</span></div>
-    <div class="small dim">${LOADER[s.loader] || s.loader} ${esc(s.mcVersion)} · порт ${s.port}</div>
+    <div class="row nowrap">${sIco(s)}<div class="grow" style="min-width:0"><div class="row nowrap"><span class="dot ${s.status}"></span><span class="t ellipsis">${esc(s.name)}</span></div>
+    <div class="small dim">${LOADER[s.loader] || s.loader} ${esc(s.mcVersion)} · порт ${s.port}</div></div><span class="badge ${st[1]}">${st[0]}</span></div>
     ${on ? `<div class="meters"><div>CPU<b>${s.stats ? fmtCpu(s.stats.cpu) + '%' : '—'}</b></div><div>Память<b>${s.stats ? fmtBytes(s.stats.mem) : '—'}</b></div><div>Игроки<b>${s.players.length}</b></div></div>` : ''}</div>`;
 }
 async function vList() {
@@ -180,6 +181,12 @@ async function tBackups() {
 async function mkBackup() { await api('backups.create', { id: S.id, note: 'phone' }).catch(() => {}); toast('Бэкап создаётся…', 'info'); }
 
 // ---------- настройки ----------
+const THEMES = [['hybrid', 'Гибрид', '#0a0b0f', 'linear-gradient(90deg,#10b981,#06b6d4)', '#2b2e3a'], ['light', 'Светлая', '#eef1f7', 'linear-gradient(90deg,#6366f1,#14b8a6)', '#cbd5e1'],
+  ['glow', 'Неон', '#050507', 'linear-gradient(90deg,#a855f7,#f97316)', '#2a2a33'], ['calm', 'Спокойная', '#262b35', '#88c0d0', '#3b4252']];
+const themePick = (cur) => `<div class="theme-pick" id="st-theme">${THEMES.map(([k, t, bg, ac, ln]) => `<button class="${cur === k ? 'on' : ''}" data-v="${k}" onclick="setThemeId('${k}')"><div class="sw" style="background:${bg}"><i style="background:${ac}"></i><i style="background:${ln}"></i><i style="background:${ln}"></i></div><span>${t}</span></button>`).join('')}</div>`;
+const THEME_KEY = 'mcm-theme';
+const themeId = () => { try { const t = localStorage.getItem(THEME_KEY); return THEMES.some((x) => x[0] === t) ? t : 'hybrid'; } catch { return 'hybrid'; } };
+function setThemeId(t) { try { localStorage.setItem(THEME_KEY, t); } catch {} document.documentElement.dataset.theme = t; $$('#st-theme button').forEach((x) => x.classList.toggle('on', x.dataset.v === t)); }
 function vSettings() {
   head('Настройки');
   $('#body').className = 'm-body';
@@ -188,6 +195,7 @@ function vSettings() {
   $('#body').innerHTML = `<div class="set-group-title">Панели</div><div class="set-list">${a.panels.map((p) => `<div class="set-item" style="padding:12px 14px">${ic('server')}<div class="txt"><b>${esc(p.name)}${p.id === a.active ? ' ✓' : ''}</b><span>${p.addresses.map(esc).join(', ')} · порт ${p.port}</span></div>
       <button class="sm ghost" onclick='delPanel(${attr(p.id)},${attr(p.name)})'>${ic('trash')}</button></div>`).join('')}</div>
     <button style="width:100%;margin-top:8px" onclick="go('add')">${ic('plus')}Добавить панель</button>
+    <div class="set-group-title">Оформление</div>${themePick(themeId())}
     <div class="set-group-title">Уведомления</div><div class="set-list">
       ${swi('background', 'Работать в фоне', 'Держать связь с панелью, когда приложение закрыто (значок в шторке)')}
       ${swi('notifyCrash', 'Сбои серверов', 'Сервер аварийно завершился')}
@@ -237,7 +245,7 @@ window.addEventListener('popstate', () => {
 
 async function refreshApp() { S.app = await inv('state'); }
 (async () => {
-  if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.dataset.theme = 'dark';
+  document.documentElement.dataset.theme = themeId();
   await refreshApp();
   if (S.app.panels.length) { startEvents(); go('list'); } else go('add');
 })();

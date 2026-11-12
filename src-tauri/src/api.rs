@@ -58,6 +58,7 @@ pub async fn dispatch(cmd: &str, a: Value, web: bool) -> Res<Value> {
         "servers.create" => servers::create(&a),
         "servers.import" => importer::import_servers(&s("path")).await,
         "servers.update" => servers::update(&id, &a["patch"]),
+        "servers.setIcon" => servers::set_icon(&id, a["data"].as_str().unwrap_or("")),
         "servers.remove" => { servers::remove(&id, a["files"].as_bool().unwrap_or(false)).await?; ok() }
         "servers.start" => { servers::start(id).await?; ok() }
         "servers.stop" => { servers::stop(&id).await?; ok() }
