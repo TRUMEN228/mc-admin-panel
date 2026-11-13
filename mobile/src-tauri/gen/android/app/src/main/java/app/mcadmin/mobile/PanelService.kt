@@ -115,7 +115,7 @@ class PanelService : Service() {
         val addrs = c.optJSONArray("addresses") ?: return
         if (addrs.length() == 0) return
         val addr = addrs.getString(addrIndex % addrs.length())
-        val url = "ws://$addr:${c.optInt("port", 7777)}/api/events?token=${c.optString("token")}&types=crash,players,job,status"
+        val url = "ws://$addr:${c.optInt("port", 7777)}/api/events?token=${c.optString("token")}&types=crash,players,job,status,alert"
         ws = http.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 main.post {
@@ -153,6 +153,7 @@ class PanelService : Service() {
             "players" -> if (c.optBoolean("players", true) && m.optBoolean("joined")) {
                 notifyEvent("${m.optString("player")} зашёл на сервер", "«${m.optString("name", srv)}» · онлайн: ${m.optJSONArray("players")?.length() ?: 0}")
             }
+            "alert" -> if (c.optBoolean("alerts", true)) notifyEvent(m.optString("title"), m.optString("text"))
             "job" -> if (c.optBoolean("jobs", true)) {
                 val j = m.optJSONObject("job") ?: return
                 if (j.optString("status") == "error") {

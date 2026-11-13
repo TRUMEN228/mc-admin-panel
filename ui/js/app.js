@@ -11,6 +11,8 @@ const S = { servers: [], settings: {}, sets: [], sys: null, info: {} };
 let cur = {};
 const srvById = (id) => S.servers.find((s) => s.id === id);
 const loaderName = (l) => LOADERS[l]?.name || l;
+const tpsCls = (t) => (t == null ? '' : t >= 18 ? 'ok' : t >= 15 ? 'warn' : 'bad');
+const fmtTps = (t) => (t == null ? '—' : String(t).replace('.', ','));
 const srvIco = (s) => (s.icon ? `<img class="srv-img" src="${s.icon}" alt="">` : ic(LOADERS[s.loader]?.icon || 'server'));
 
 // ---------- тема ----------
@@ -97,7 +99,7 @@ function live(s) {
   if (cur.page === 'server' && cur.id === s.id) {
     const d = $('#top-dot'); if (d) d.className = 'dot ' + s.status;
     const a = $('#top-actions'); if (a && !a.contains(document.activeElement)) a.innerHTML = ctrlButtons(s);
-    const m = $('#srv-metrics'); if (m) m.innerHTML = srvMetrics(s);
+    const m = $('#srv-metrics'); if (m) { m.classList.add('no-anim'); m.innerHTML = srvMetrics(s); }
     const pl = $('#plist'); if (pl) pl.innerHTML = s.players.map((p) => `<option value="${esc(p)}">`).join('');
     if (cur.tab === 'players') { const o = $('#online'); if (o) o.innerHTML = onlineList(s); }
   }
@@ -124,7 +126,7 @@ function handleEvent(m) {
       return live(s);
     case 'stats':
       if (!s) return;
-      Object.assign(s, { stats: m.stats, players: m.players, status: m.status });
+      Object.assign(s, { stats: m.stats, players: m.players, status: m.status, tps: m.tps });
       if (m.stats) { (s.history ||= []).push([m.t, m.stats.cpu, Math.round(m.stats.mem / 1048576), m.players.length]); if (s.history.length > 180) s.history.shift(); }
       return live(s);
     case 'players':
@@ -140,19 +142,23 @@ function handleEvent(m) {
       toast(`«${s.name}» аварийно завершился\n${m.diag?.hints?.[0]?.title || 'Код выхода ' + m.code}`, 'error');
       if (cur.page === 'server' && cur.id === s.id && cur.tab === 'console') { const c = $('#crash-slot'); if (c) c.innerHTML = crashBanner(s); }
       return;
-    case 'log': if (cur.page === 'server' && cur.id === m.id && cur.tab === 'console') appendLog(m.line); return;
+    case 'log': pregenLog(m.id, m.line); if (cur.page === 'server' && cur.id === m.id && cur.tab === 'console') appendLog(m.line); return;
     case 'backups': if (cur.page === 'server' && cur.id === m.id && cur.tab === 'backups') tBackups(srvById(m.id)); return;
     case 'sys': {
       S.sys = m;
       S.sysHist.push([m.cpu, m.memTotal ? (m.memUsed / m.memTotal) * 100 : 0, S.servers.filter((x) => x.status === 'running').length, S.servers.reduce((a, x) => a + x.players.length, 0)]);
       if (S.sysHist.length > 90) S.sysHist.shift();
       const e = $('#sys-mini'); if (e) e.innerHTML = sysMini();
-      if (cur.page === 'dash') { dashTotals(); const r = $('#res'); if (r) r.innerHTML = resHtml(); }
+      if (cur.page === 'dash') { dashTotals(); const r = $('#res'); if (r) { r.classList.add('no-anim'); r.innerHTML = resHtml(); } }
       return;
     }
     case 'settings': return call('settings.get').then((v) => { S.settings = v; applyTheme(); });
     case 'sets': if (cur.page === 'sets') route(); return;
     case 'devices': PAIR_LISTENERS.forEach((f) => f(m)); renderDevices(); return;
+    case 'alert':
+      feedPush(m.kind === 'tps' ? 'warn' : 'err', m.kind === 'disk' ? 'save' : m.kind === 'mem' ? 'memory' : 'zap', `${m.title}: ${m.text}`);
+      toast(`${m.title}\n${m.text}`, 'error', 8000);
+      return;
     case 'quitting': toast('Остановка серверов перед выходом…', 'info', 60000); return;
   }
 }
@@ -227,7 +233,7 @@ function feedPush(kind, icon, text) {
   try { localStorage.setItem(FEED_KEY, JSON.stringify(S.feed)); } catch {}
   const f = $('#feed'); if (f) f.innerHTML = feedHtml();
 }
-const ago = (t) => { const m = Math.floor((Date.now() - t) / 60000); return m < 1 ? 'только что' : m < 60 ? `${m} мин назад` : m < 1440 ? `${Math.floor(m / 60)} ч назад` : `${Math.floor(m / 1440)} д назад`; };
+const ago = (t) => { const m = Math.floor((Date.now() - t) / 60000); return m < 1 ? 'только что' : m < 60 ? `${m} мин назад` : m < 1440 ? `${Math.floor(m / 60)} ч назад` : m < 43200 ? `${Math.floor(m / 1440)} д назад` : new Date(t).toLocaleDateString('ru-RU'); };
 function feedHtml() {
   if (!S.feed.length) return '<li class="dim small">Здесь появятся заходы игроков, сбои, бэкапы и установки</li>';
   return S.feed.slice(0, 12).map((e, i) => `<li class="${e.k}" style="animation-delay:${i * 50}ms"><span class="fi">${ic(e.i)}</span><div><p>${esc(e.t)}</p><time>${ago(e.at)}</time></div></li>`).join('');
@@ -253,6 +259,7 @@ function srvCardInner(s) {
       <span class="badge ${st[1]}">${st[0]}</span></div>
     <div class="stats3"><div class="mini-stat"><div class="k">CPU</div><div class="v">${on && s.stats ? fmtCpu(s.stats.cpu) + '%' : '—'}</div></div>
       <div class="mini-stat"><div class="k">Память</div><div class="v">${on && s.stats ? fmtMb(memMb) : '—'}<span class="dim small"> / ${fmtMb(s.ram)}</span></div></div>
+      <div class="mini-stat"><div class="k">TPS</div><div class="v tps ${on ? tpsCls(s.tps) : ''}">${on ? fmtTps(s.tps) : '—'}</div></div>
       <div class="mini-stat"><div class="k">Аптайм</div><div class="v">${on && s.started ? fmtDur(Date.now() - s.started) : '—'}</div></div></div>
     ${on ? dualChart(s.history, s.ram) : ""}
     <div class="players-line small">${on && s.players.length ? s.players.slice(0, 8).map((p) => `<img class="head-img" title="${esc(p)}" src="https://mc-heads.net/avatar/${encodeURIComponent(p)}/22" onerror="this.style.visibility='hidden'">`).join('') + `<span class="dim">&nbsp;${s.players.length} ${plural(s.players.length, 'игрок', 'игрока', 'игроков')}</span>`
@@ -377,12 +384,13 @@ async function doCreate() {
 async function browse(sel) { const p = await native.pickFolder($(sel).value); if (p) { $(sel).value = p; $(sel).dispatchEvent(new Event('input')); } }
 
 // ---------- страница сервера ----------
-const TABS = { console: ['Консоль', 'terminal'], mods: ['Моды', 'package'], backups: ['Бэкапы', 'archive'], props: ['Настройки мира', 'sliders'], players: ['Игроки', 'users'], files: ['Файлы', 'folder'], config: ['Параметры', 'wrench'] };
+const TABS = { console: ['Консоль', 'terminal'], mods: ['Моды', 'package'], backups: ['Бэкапы', 'archive'], props: ['Настройки мира', 'sliders'], players: ['Игроки', 'users'], files: ['Файлы', 'folder'], tools: ['Инструменты', 'zap'], config: ['Параметры', 'wrench'] };
 function srvMetrics(s) {
   const memMb = s.stats ? Math.round(s.stats.mem / 1048576) : 0, h = s.history || [];
   return `<div class="metric"><div class="k">${ic('cpu')}CPU</div><div class="v">${s.stats ? fmtCpu(s.stats.cpu) : '—'}<small>${s.stats ? '%' : ''}</small></div>${sparkline(h.map((x) => x[1]), 'var(--chart-1)', 100)}</div>
     <div class="metric"><div class="k">${ic('memory')}Память</div><div class="v">${s.stats ? fmtMb(memMb) : '—'}<small>из ${fmtMb(s.ram)}</small></div>${sparkline(h.map((x) => x[2]), 'var(--chart-2)', s.ram)}</div>
     <div class="metric"><div class="k">${ic('users')}Игроки</div><div class="v">${s.players.length}</div>${sparkline(h.map((x) => x[3]), 'var(--chart-3)')}</div>
+    <div class="metric"><div class="k">${ic('zap')}TPS</div><div class="v tps ${tpsCls(s.tps)}">${s.status === 'running' ? fmtTps(s.tps) : '—'}<small>${s.tps != null && s.status === 'running' ? (s.tps >= 18 ? 'без лагов' : s.tps >= 15 ? 'небольшие лаги' : 'сильные лаги') : ''}</small></div></div>
     <div class="metric"><div class="k">${ic('clock')}Аптайм</div><div class="v" style="font-size:20px">${s.status !== 'stopped' && s.started ? fmtDur(Date.now() - s.started) : '—'}</div></div>`;
 }
 async function pServer(id, tab = 'console') {
@@ -394,13 +402,13 @@ async function pServer(id, tab = 'console') {
   // заголовок и метрики не перерисовываем при переключении вкладок
   const keep = $('#srv-shell') && $('#srv-shell').dataset.id === id;
   if (!keep) setPage(`<div id="srv-shell" data-id="${id}" style="display:flex;flex-direction:column;flex:1;min-height:0">
-      <div class="grid g4" id="srv-metrics" style="margin-bottom:16px">${srvMetrics(s)}</div>
+      <div class="grid g5" id="srv-metrics" style="margin-bottom:16px">${srvMetrics(s)}</div>
       <div class="tabs" id="srv-tabs"></div><div id="tab" style="display:flex;flex-direction:column;flex:1;min-height:0"></div></div>`, true);
   $('#page').className = 'page fill';
   $('#srv-tabs').innerHTML = Object.entries(TABS).map(([k, v]) => `<a class="tab ${k === tab ? 'on' : ''}" href="#server/${id}/${k}">${ic(v[1])}${v[0]}</a>`).join('') +
     `<span class="grow"></span><button class="ghost sm" style="align-self:center" onclick="showConnect('${id}')">${ic('wifi')}Подключение</button><button class="ghost sm" style="align-self:center" onclick="native.openPath(${attr(s.dir)})">${ic('folder')}Папка</button>`;
   $('#tab').innerHTML = '';
-  await { console: tConsole, mods: tMods, backups: tBackups, props: tProps, players: tPlayers, files: tFiles, config: tConfig }[tab](s);
+  await { console: tConsole, mods: tMods, backups: tBackups, props: tProps, players: tPlayers, files: tFiles, tools: tTools, config: tConfig }[tab](s);
 }
 
 // --- консоль ---
@@ -434,7 +442,7 @@ async function tConsole(s) {
   LOG.lines = await call('servers.log', { id: s.id }).catch(() => []);
   hi = getHist(s.id).length;
   renderLog();
-  const el = $('#log');
+  const el = $('#log'); if (!el) return; // вкладку успели переключить, пока грузился лог
   el.addEventListener('scroll', () => { const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 30; if (atEnd !== LOG.follow) setFollow(atEnd, false); });
   $('#cmd').focus();
 }
@@ -777,7 +785,7 @@ async function saveProps(id) {
 function onlineList(s) {
   const on = s.status === 'running';
   return s.players.length ? s.players.map((p) => `<div class="list-item"><img src="https://mc-heads.net/avatar/${encodeURIComponent(p)}/40" style="image-rendering:pixelated" onerror="this.style.visibility='hidden'">
-    <div class="grow t">${esc(p)}</div>${[['OP', 'op', 'zap'], ['Кик', 'kick', 'logout'], ['Бан', 'ban', 'ban']].map(([t, c, i]) => `<button class="sm ${c === 'ban' ? 'danger' : ''}" ${on ? '' : 'disabled'} onclick='pc(${attr(c + ' ' + p)})'>${ic(i)}${t}</button>`).join('')}</div>`).join('')
+    <div class="grow t">${esc(p)}</div><button class="sm" onclick='openPlayer(cur.id, ${attr(p)})'>${ic('package')}Инвентарь</button>${[['OP', 'op', 'zap'], ['Кик', 'kick', 'logout'], ['Бан', 'ban', 'ban']].map(([t, c, i]) => `<button class="sm ${c === 'ban' ? 'danger' : ''}" ${on ? '' : 'disabled'} onclick='${c === 'op' ? `pc(${attr(c + ' ' + p)})` : `punish(${attr(c)},${attr(p)})`}'>${ic(i)}${t}</button>`).join('')}</div>`).join('')
     : `<div class="empty" style="padding:24px">${ic('users')}<p>${on ? 'Никого нет онлайн' : 'Сервер остановлен'}</p></div>`;
 }
 async function tPlayers(s) {
@@ -790,11 +798,25 @@ async function tPlayers(s) {
     <div class="grid g2">${Object.entries(names).map(([k, [t, i]]) => `<div class="card"><div class="card-head"><h3>${ic(i)}${t} <span class="count">${l[k].length}</span></h3>
       <button class="sm" ${on ? '' : 'disabled title="Сервер должен быть запущен"'} onclick='addToList(${attr(add[k])},${attr(t)})'>${ic('plus')}Добавить</button></div>
       ${l[k].map((e) => { const n = e.name || e.ip; return `<div class="list-item"><div class="grow"><div class="t">${esc(n)}</div>${e.reason ? `<div class="d">${esc(e.reason)}</div>` : ''}</div>${on ? `<button class="ghost icon sm" title="Убрать" onclick='pc(${attr(rm[k] + ' ' + n)})'>${ic('x')}</button>` : ''}</div>`; }).join('') || '<p class="small dim" style="margin:0">Пусто</p>'}</div>`).join('')}</div>
+    <div class="card"><div class="card-head"><h3>${ic('chart')}Статистика игроков</h3><button class="sm" onclick="transferPlayer('${s.id}')">${ic('repeat')}Перенести на другой ник</button></div><div id="pstats"><div class="dim small">Загрузка…</div></div></div>
     ${on ? '' : `<p class="small dim">${ic('info')} Списки изменяются командами — запустите сервер, чтобы редактировать их.</p>`}</div>`;
+  const st = await api('servers.playerStats', { id: s.id }).catch(() => []);
+  const el = $('#pstats'); if (!el) return;
+  el.innerHTML = st.length ? `<table class="ptable"><thead><tr><th>Игрок</th><th>В игре</th><th>Заходов</th><th>Последний визит</th><th>Впервые</th></tr></thead><tbody>${st.map((p) => `<tr>
+      <td><a href="#" onclick="openPlayer('${s.id}', ${attr(p.name)});return false" class="row nowrap" title="Инвентарь и характеристики"><img class="head-img" src="https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/22" onerror="this.style.visibility='hidden'">${esc(p.name)}</a></td>
+      <td>${fmtDur(p.total)}</td><td>${p.sessions}</td><td>${p.online ? '<span class="badge green">онлайн</span>' : ago(p.last)}</td><td class="dim">${new Date(p.first).toLocaleDateString('ru-RU')}</td></tr>`).join('')}</tbody></table>`
+    : '<p class="small dim" style="margin:0">Пока пусто — статистика появится, когда игроки зайдут на сервер</p>';
+}
+// кик и бан с причиной
+async function punish(cmd, player) {
+  const r = await formDialog({ title: `${cmd === 'kick' ? 'Кикнуть' : 'Забанить'} ${player}`, icon: cmd === 'kick' ? 'logout' : 'ban', ok: cmd === 'kick' ? 'Кикнуть' : 'Забанить',
+    fields: [{ key: 'reason', label: 'Причина', placeholder: 'необязательно — игрок увидит её при отключении' }] });
+  if (r) pc(`${cmd} ${player}${r.reason.trim() ? ' ' + r.reason.trim() : ''}`);
 }
 async function addToList(cmd, title) {
-  const n = await promptDialog({ title, label: cmd.includes('ip') ? 'IP-адрес или ник' : 'Ник игрока', ok: 'Добавить' });
-  if (n) pc(cmd + ' ' + n.trim());
+  const ban = cmd.startsWith('ban');
+  const r = await formDialog({ title, ok: 'Добавить', fields: [{ key: 'n', label: cmd.includes('ip') ? 'IP-адрес или ник' : 'Ник игрока' }, ...(ban ? [{ key: 'reason', label: 'Причина', placeholder: 'необязательно' }] : [])] });
+  if (r && r.n.trim()) pc(`${cmd} ${r.n.trim()}${ban && r.reason.trim() ? ' ' + r.reason.trim() : ''}`);
 }
 const pc = (c) => api('servers.command', { id: cur.id, cmd: c }).then(() => setTimeout(() => cur.tab === 'players' && tPlayers(srvById(cur.id)), 800)).catch(() => {});
 
@@ -872,7 +894,9 @@ async function showConnect(id) {
           <div class="ctl auto">${i.firewall ? '<span class="badge green">' + ic('check') + 'Открыт</span>' : NATIVE ? `<button class="sm primary" onclick="fwAdd(this,'${id}')">${ic('shield')}Открыть порт</button>` : ''}</div></div>
         <div class="set-item" style="padding:12px 14px">${ic('zap')}<div class="txt"><b>Проверка из интернета</b><span id="cn-check">Сервис mcsrvstat.us попробует подключиться к серверу по внешнему адресу</span></div>
           <div class="ctl auto"><button class="sm" ${s.status !== 'running' ? 'disabled title="Сначала запустите сервер"' : ''} onclick="netCheck(this,'${id}')">Проверить</button></div></div>
-        <p class="small dim" style="margin:4px 0 0">Если проверка не проходит: пробросьте порт на роутере, либо используйте туннель (playit.gg, Radmin VPN, ZeroTier).</p>`;
+        <div class="set-item" style="padding:12px 14px">${ic('cloud')}<div class="txt"><b>Без белого IP — playit.gg</b><span>Бесплатный туннель: друзья заходят по адресу вида <code>имя.joinmc.link</code>, проброс портов не нужен. В открывшемся окне агента перейдите по ссылке, войдите в playit.gg и создайте туннель «Minecraft Java» на порт ${i.port}</span></div>
+          <div class="ctl auto">${NATIVE ? `<button class="sm" onclick="startPlayit(this)">${ic('play')}Запустить агент</button>` : '<span class="small dim">только в приложении</span>'}</div></div>
+        <p class="small dim" style="margin:4px 0 0">Если проверка не проходит: пробросьте порт на роутере или используйте туннель (playit.gg выше, Radmin VPN, ZeroTier).</p>`;
     } });
 }
 async function fwAdd(b, id) {
@@ -1108,6 +1132,12 @@ async function pSettings() {
       ${item('archive', 'Максимум бэкапов на сервер', 'Старые копии удаляются начиная с самой ранней', inp('maxBackups', 'number', 'min="1" style="width:140px"'), true)}
       ${item('terminal', 'Java', '«auto» — панель сама скачает нужную версию (8/17/21…) под версию Minecraft', inp('javaPath'))}
     </div>
+    <div class="set-group-title">Копии бэкапов вне ПК</div><div class="set-list">
+      ${item('folder', 'Копировать в папку', 'Другой диск или папка Google Drive / OneDrive / Яндекс Диска на ПК — копия появится там после каждого бэкапа. Пусто — не копировать', dir('backupMirrorDir'))}
+      ${item('cloud', 'WebDAV', 'Загрузка бэкапов в облако: Яндекс Диск (https://webdav.yandex.ru, пароль приложения), Nextcloud, ownCloud. Файлы кладутся в папку MCAdminPanel', inp('webdavUrl', 'text', 'placeholder="https://webdav.yandex.ru"'))}
+      ${item('user', 'Логин WebDAV', '', inp('webdavUser', 'text', 'autocomplete="off"'))}
+      ${item('key', 'Пароль WebDAV', 'Хранится в настройках панели на этом ПК', `<div class="input-row" style="width:100%">${inp('webdavPass', 'password', 'autocomplete="off"')}<button onclick="testDav(this)">${ic('check')}Проверить</button></div>`)}
+    </div>
     <div class="set-group-title">Сеть</div><div class="set-list">
       ${item('globe', 'Прокси', '«auto» — системный прокси Windows или HTTPS_PROXY; пусто — напрямую; или вручную, напр. http://127.0.0.1:10809', inp('proxy'))}
     </div>
@@ -1175,7 +1205,7 @@ const PAIR_LISTENERS = [];
 
 async function saveSettings() {
   const o = {};
-  ['serversDir', 'backupsDir', 'maxBackups', 'defaultRamMb', 'javaPath', 'minecraftDir', 'proxy', 'port', 'webPassword', 'curseforgeKey'].forEach((k) => { const e = $('#st-' + k); if (e) o[k] = e.value.trim(); });
+  ['serversDir', 'backupsDir', 'maxBackups', 'defaultRamMb', 'javaPath', 'minecraftDir', 'proxy', 'port', 'webPassword', 'curseforgeKey', 'backupMirrorDir', 'webdavUrl', 'webdavUser', 'webdavPass'].forEach((k) => { const e = $('#st-' + k); if (e) o[k] = e.value.trim(); });
   ['launchAtLogin', 'minimizeToTray', 'notifications', 'webEnabled', 'webLan', 'autoUpdateCheck', 'mobileEnabled'].forEach((k) => { const e = $('#st-' + k); if (e) o[k] = e.checked; });
   if (o.webLan && !o.webPassword) { toast('Для доступа из локальной сети задайте пароль', 'error'); return; }
   S.settings = await api('settings.save', o);
@@ -1333,4 +1363,325 @@ async function setIcon(id, data) {
   const s = srvById(id); if (s) s.icon = r.icon;
   toast(data ? 'Иконка обновлена' : 'Иконка убрана', 'ok');
   renderNav(); route();
+}
+
+async function testDav(b) {
+  await saveSettings();
+  b.disabled = true;
+  try { await call('backups.testRemote'); toast('WebDAV подключён — бэкапы будут загружаться в облако', 'ok'); }
+  catch (e) { toast('WebDAV: ' + e.message, 'error'); }
+  finally { b.disabled = false; }
+}
+
+// ---------- инструменты сервера: карта, прогрузка, клонирование ----------
+const PREGEN = { r: 2000 };
+async function tTools(s) {
+  const t = await api('tools.status', { id: s.id }).catch(() => ({}));
+  const on = s.status === 'running';
+  const need = (what) => `<p class="small dim" style="margin:0">${ic('info')} ${what}</p>`;
+  $('#tab').innerHTML = `<div class="tab-scroll"><div class="grid g2" style="align-items:start">
+    <div class="card"><div class="card-head"><h3>${ic('globe')}Карта мира</h3>${t.bluemap ? '<span class="badge green">BlueMap</span>' : ''}</div>
+      <p class="small dim" style="margin-top:0">3D-карта в браузере: видно постройки и игроков онлайн. Работает на Paper, Fabric, Forge и NeoForge.</p>
+      ${!t.bluemap ? `<button class="primary" onclick="toolInstall(this,'${s.id}','bluemap')">${ic('download')}Установить BlueMap</button>`
+        : t.accepted ? `<div class="row"><button class="primary" onclick="native.openUrl('${t.mapUrl}')">${ic('external')}Открыть карту</button><code class="selectable">${t.mapUrl}</code></div>
+            <p class="small dim">Чтобы карту видели друзья, откройте им порт ${t.mapPort} так же, как порт сервера. Первая отрисовка мира занимает время.</p>`
+        : `<button class="primary" onclick="mapEnable(this,'${s.id}')">${ic('check')}Включить карту</button>${need(on ? 'BlueMap ждёт согласия на загрузку текстур Minecraft — кнопка его даст' : 'Запустите сервер один раз, затем нажмите «Включить карту»')}`}
+    </div>
+    <div class="card"><div class="card-head"><h3>${ic('layers')}Прогрузка мира</h3>${t.chunky ? '<span class="badge green">Chunky</span>' : ''}</div>
+      <p class="small dim" style="margin-top:0">Заранее генерирует чанки вокруг спавна — игроки не ловят лаги при исследовании.</p>
+      ${!t.chunky ? `<button class="primary" onclick="toolInstall(this,'${s.id}','chunky')">${ic('download')}Установить Chunky</button>`
+        : `<div class="row" style="flex-wrap:wrap"><div class="seg" id="pg-r">${[1000, 2000, 5000, 10000].map((r) => `<button class="${PREGEN.r === r ? 'on' : ''}" onclick="PREGEN.r=${r};$$('#pg-r button').forEach(b=>b.classList.toggle('on',b===this))">${r / 1000} тыс. блоков</button>`).join('')}</div></div>
+          <div class="row" style="margin-top:10px;flex-wrap:wrap"><button class="primary" ${on ? '' : 'disabled'} onclick="pregen('start')">${ic('play')}Начать</button><button ${on ? '' : 'disabled'} onclick="pregen('pause')">${ic('pause')}Пауза</button><button ${on ? '' : 'disabled'} onclick="pregen('continue')">${ic('play')}Продолжить</button><button class="danger" ${on ? '' : 'disabled'} onclick="pregen('cancel')">${ic('x')}Отменить</button></div>
+          <div id="pg-prog" style="margin-top:12px">${PREGEN.line ? pregenHtml(PREGEN.line) : need(on ? 'Радиус — от точки спавна. 2 тыс. блоков обычно хватает' : 'Сервер должен быть запущен')}</div>`}
+    </div>
+    <div class="card"><div class="card-head"><h3>${ic('copy')}Клонировать сервер</h3></div>
+      <p class="small dim" style="margin-top:0">Копия с тем же ядром, модами, конфигами и настройками — для тестов или нового сезона. Порт подберётся свободный.</p>
+      <div class="field"><label>Название копии</label><input id="cl-name" value="${esc(s.name)} — копия"></div>
+      <label class="switch" style="margin:10px 0"><input type="checkbox" id="cl-world" checked><span class="track"></span>Копировать мир (без него — чистый шаблон с новым миром)</label>
+      <div><button class="primary" onclick="cloneSrv(this,'${s.id}')">${ic('copy')}Клонировать</button></div>
+    </div>
+  </div></div>`;
+}
+async function toolInstall(b, id, slug) {
+  b.disabled = true; b.innerHTML = ic('loader', 'spin') + 'Установка…';
+  try {
+    await call('mods.install', { id, provider: 'modrinth', projectId: slug });
+    toast(`${slug === 'bluemap' ? 'BlueMap' : 'Chunky'} установлен — перезапустите сервер, чтобы он загрузился`, 'ok', 6000);
+  } catch (e) { toast(e.message, 'error'); }
+  tTools(srvById(id));
+}
+async function mapEnable(b, id) {
+  b.disabled = true;
+  try { await call('tools.mapEnable', { id }); toast('Карта включена — BlueMap скачает текстуры и начнёт рисовать мир', 'ok', 6000); } catch (e) { toast(e.message, 'error', 7000); }
+  tTools(srvById(id));
+}
+const pregenHtml = (l) => { const m = l.match(/Processed: ([\d,]+) chunks \(([\d.]+)%\)(?:, ETA: ([\d:]+))?/); if (!m) return `<p class="small">${esc(l.replace(/^.*\[Chunky\]\s*/, ''))}</p>`;
+  return `<div class="res-row"><span>Готово ${m[1]} чанков${m[3] ? ` · осталось ${m[3]}` : ''}</span><b>${m[2].replace('.', ',')}%</b></div><div class="bar"><i style="width:${m[2]}%"></i></div>`; };
+async function pregen(a) {
+  const id = cur.id;
+  const cmds = { start: ['chunky world minecraft:overworld', 'chunky center 0 0', `chunky radius ${PREGEN.r}`, 'chunky start'], pause: ['chunky pause'], continue: ['chunky continue'], cancel: ['chunky cancel', 'chunky confirm'] }[a];
+  for (const c of cmds) await api('servers.command', { id, cmd: c }).catch(() => {});
+  if (a === 'cancel') { PREGEN.line = ''; const p = $('#pg-prog'); if (p) p.innerHTML = '<p class="small dim">Прогрузка отменена</p>'; }
+}
+// прогресс Chunky из консоли
+function pregenLog(id, line) {
+  if (!/\[Chunky\]|Chunky\]|Task (running|finished|stopped|paused)/i.test(line)) return;
+  PREGEN.line = line;
+  const p = $('#pg-prog'); if (p && cur.id === id && cur.tab === 'tools') p.innerHTML = /finished/i.test(line) ? `<span class="badge green">${ic('check')}Прогрузка завершена</span>` : pregenHtml(line);
+}
+async function cloneSrv(b, id) {
+  b.disabled = true;
+  try { await call('servers.clone', { id, name: $('#cl-name').value, withWorld: $('#cl-world').checked }); toast('Клонирование запущено — прогресс в списке задач', 'info'); }
+  catch (e) { toast(e.message, 'error'); b.disabled = false; }
+}
+async function startPlayit(b) {
+  b.disabled = true; b.innerHTML = ic('loader', 'spin') + 'Запуск…';
+  try { await call('tools.playit'); toast('Агент playit.gg запущен в отдельном окне — следуйте ссылке в нём', 'ok', 8000); b.innerHTML = ic('check') + 'Запущен'; }
+  catch (e) { toast('playit.gg: ' + e.message, 'error'); b.disabled = false; b.innerHTML = ic('play') + 'Запустить агент'; }
+}
+
+// ---------- перенос данных игрока на другой ник ----------
+async function transferPlayer(id) {
+  const s = srvById(id);
+  if (s.status !== 'stopped') return alertDialog('Сначала остановите сервер — пока он работает, он перезапишет данные игроков.', 'Сервер работает', 'alert');
+  const r = await formDialog({ title: 'Перенести данные на другой ник', icon: 'repeat', ok: 'Перенести', fields: [
+    { key: 'from', label: 'Старый ник', placeholder: 'под которым остались вещи и достижения' },
+    { key: 'to', label: 'Новый ник', placeholder: 'на который перенести', hint: 'Переносятся инвентарь, эндер-сундук, позиция, опыт, достижения, статистика, данные модов, а также права оператора и белый список. Данные нового ника перед заменой сохраняются в резервную папку мира.' }] });
+  if (!r || !r.from.trim() || !r.to.trim()) return;
+  if (!(await confirmDialog(`Вещи и прогресс «${r.from.trim()}» будут перенесены на «${r.to.trim()}». Текущие данные «${r.to.trim()}» заменятся (их копия сохранится).`, { title: 'Перенести?', ok: 'Перенести' }))) return;
+  try {
+    const t = await call('players.transfer', { id, from: r.from, to: r.to });
+    alertDialog(`Готово: перенесено файлов — ${t.files.length}.\n\n${t.files.slice(0, 12).join('\n')}${t.files.length > 12 ? '\n…' : ''}\n\nUUID: ${t.from} → ${t.to}${t.online ? '' : ' (офлайн-режим)'}`, 'Данные перенесены', 'check');
+    feedPush('ok', 'repeat', `Данные ${r.from.trim()} перенесены на ${r.to.trim()} («${s.name}»)`);
+  } catch (e) { alertDialog(e.message, 'Не удалось перенести', 'alert'); }
+}
+
+// ---------- окно игрока: инвентарь в стиле игры, свойства предметов, здоровье/голод/опыт ----------
+// Все правки живут в копии (PV.d) и пишутся в файл игрока только кнопкой «Сохранить».
+const PV = {};
+const MCA = 'https://assets.mcasset.cloud/1.21.4/assets/minecraft/textures';
+const ENCH = { protection: 'Защита', fire_protection: 'Огнеупорность', feather_falling: 'Невесомость', blast_protection: 'Взрывоустойчивость', projectile_protection: 'Защита от снарядов',
+  respiration: 'Подводное дыхание', aqua_affinity: 'Подводник', thorns: 'Шипы', depth_strider: 'Подводная ходьба', frost_walker: 'Ледоход', binding_curse: 'Проклятие несъёмности',
+  soul_speed: 'Скорость души', swift_sneak: 'Быстрое подкрадывание', sharpness: 'Острота', smite: 'Небесная кара', bane_of_arthropods: 'Бич членистоногих', knockback: 'Отдача',
+  fire_aspect: 'Заговор огня', looting: 'Добыча', sweeping_edge: 'Разящий клинок', efficiency: 'Эффективность', silk_touch: 'Шёлковое касание', unbreaking: 'Прочность',
+  fortune: 'Удача', power: 'Сила', punch: 'Откидывание', flame: 'Горящая стрела', infinity: 'Бесконечность', luck_of_the_sea: 'Морская удача', lure: 'Приманка',
+  loyalty: 'Верность', impaling: 'Пронзатель', riptide: 'Тягун', channeling: 'Громовержец', multishot: 'Тройной выстрел', quick_charge: 'Быстрая перезарядка',
+  piercing: 'Пронзающая стрела', mending: 'Починка', vanishing_curse: 'Проклятие утраты', density: 'Плотность', breach: 'Пробитие', wind_burst: 'Порыв ветра', lunge: 'Выпад' };
+// прочность обычных предметов (в файле игрока хранится только износ)
+const MAXDUR = (() => {
+  const m = { bow: 384, crossbow: 465, trident: 250, shield: 336, elytra: 432, fishing_rod: 64, shears: 238, flint_and_steel: 64, mace: 500, brush: 64, carrot_on_a_stick: 25, warped_fungus_on_a_stick: 100, turtle_helmet: 275, wolf_armor: 64 };
+  const tools = { wooden: 59, stone: 131, iron: 250, golden: 32, diamond: 1561, netherite: 2031 };
+  for (const [k, v] of Object.entries(tools)) for (const t of ['sword', 'pickaxe', 'axe', 'shovel', 'hoe']) m[`${k}_${t}`] = v;
+  const armor = { leather: [55, 80, 75, 65], chainmail: [165, 240, 225, 195], iron: [165, 240, 225, 195], golden: [77, 112, 105, 91], diamond: [363, 528, 495, 429], netherite: [407, 592, 555, 481] };
+  for (const [k, v] of Object.entries(armor)) ['helmet', 'chestplate', 'leggings', 'boots'].forEach((t, i) => (m[`${k}_${t}`] = v[i]));
+  return m;
+})();
+const maxDur = (it) => it.maxDamage || MAXDUR[String(it.id || '').replace(/^minecraft:/, '')] || 0;
+const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+const short = (id) => String(id || '').replace(/^minecraft:/, '');
+// русские названия — из официального языкового файла игры (ui/js/mcnames.js)
+const NAMES = window.MCNAMES || { item: {}, ench: {}, potion: {} };
+// ключи перевода в именах (⟦filled_map.buried_treasure⟧) — по языковому файлу игры
+const trText = (s) => (s ? String(s).replace(/⟦([^⟧]+)⟧/g, (_, k) => NAMES.tr?.[k] || NAMES.item[k.split('.').pop()] || k.split('.').pop().replace(/_/g, ' ')) : s);
+const itemName = (id) => NAMES.item[short(id)] || short(id).replace(/_/g, ' ');
+const enchTitle = (id) => NAMES.ench[short(id)] || ENCH[short(id)] || short(id).replace(/_/g, ' ');
+const enchName = (e) => `${enchTitle(e.id)} ${ROMAN[e.lvl] || e.lvl}`;
+const potionName = (p) => NAMES.potion[short(p).replace(/^(long|strong)_/, '')] || short(p).replace(/_/g, ' ');
+function itemIcon(id) {
+  const n = short(id);
+  // объёмные иконки как в игре → текстура предмета → текстура блока → подпись
+  return `<img src="https://mc.nerothe.com/img/1.21.4/minecraft_${n}.png" alt="" draggable="false"
+    onerror="if(!this.dataset.f){this.dataset.f=1;this.src='${MCA}/item/${n}.png'}else if(this.dataset.f==1){this.dataset.f=2;this.src='${MCA}/block/${n}.png'}else{this.replaceWith(Object.assign(document.createElement('span'),{className:'inv-txt',textContent:'${n.slice(0, 6)}'}))}">`;
+}
+// ---------- цвет имени как в игре: свой цвет имени → редкость (зачарование поднимает на ступень) ----------
+const MC_COLORS = { black: '#000000', dark_blue: '#0000aa', dark_green: '#00aa00', dark_aqua: '#00aaaa', dark_red: '#aa0000', dark_purple: '#aa00aa', gold: '#ffaa00', gray: '#aaaaaa',
+  dark_gray: '#555555', blue: '#5555ff', green: '#55ff55', aqua: '#55ffff', red: '#ff5555', light_purple: '#ff55ff', yellow: '#ffff55', white: '#ffffff' };
+const RARITY_COLOR = { common: '#ffffff', uncommon: '#ffff55', rare: '#55ffff', epic: '#ff55ff' };
+const BASE_RARITY = (() => {
+  const r = {};
+  'enchanted_book experience_bottle dragon_breath heart_of_the_sea totem_of_undying nether_star creeper_head zombie_head skeleton_skull wither_skeleton_skull player_head piglin_head trial_key ominous_trial_key ominous_bottle'.split(' ').forEach((k) => (r[k] = 'uncommon'));
+  'beacon conduit end_crystal golden_apple trident sniffer_egg recovery_compass'.split(' ').forEach((k) => (r[k] = 'rare'));
+  'enchanted_golden_apple dragon_egg dragon_head elytra mace heavy_core command_block chain_command_block repeating_command_block structure_block jigsaw barrier light debug_stick knowledge_book'.split(' ').forEach((k) => (r[k] = 'epic'));
+  return r;
+})();
+function nameColor(it) {
+  if (it.nameColor) return MC_COLORS[it.nameColor] || (/^#[0-9a-f]{6}$/i.test(it.nameColor) ? it.nameColor : '#ffffff');
+  const n = short(it.id);
+  let r = it.rarity || BASE_RARITY[n] || (/^music_disc_/.test(n) ? 'uncommon' : 'common');
+  if (it.enchanted) r = { common: 'rare', uncommon: 'rare', rare: 'epic', epic: 'epic' }[r] || r;
+  return RARITY_COLOR[r] || '#ffffff';
+}
+const nameHtml = (it, extra = '') => `<div class="t-name ${it.name ? 'custom' : ''}" style="color:${nameColor(it)}">${esc(trText(it.name) || itemName(it.id))}${extra}</div>`;
+// ---------- подсказка как в игре ----------
+function tipHtml(it) {
+  const lines = [nameHtml(it, it.count > 1 ? ` <span class="t-dim">×${it.count}</span>` : '')];
+  (it.enchants || []).forEach((e) => lines.push(`<div class="t-ench ${/curse/.test(e.id) ? 'curse' : ''}">${esc(enchName(e))}</div>`));
+  (it.stored || []).forEach((e) => lines.push(`<div class="t-ench">${esc(enchName(e))}</div>`));
+  if (it.potion) lines.push(`<div class="t-blue">${esc(potionName(it.potion))}${/^(minecraft:)?long_/.test(it.potion) ? ' (дольше)' : /^(minecraft:)?strong_/.test(it.potion) ? ' (сильнее)' : ''}</div>`);
+  (it.lore || []).map(trText).forEach((l) => lines.push(`<div class="t-lore">${esc(l)}</div>`));
+  if (it.contents?.length) lines.push(...it.contents.slice(0, 6).map((c) => `<div class="t-dim">${esc(trText(c.name) || itemName(c.id))} ×${c.count}</div>`), ...(it.contents.length > 6 ? [`<div class="t-dim">и ещё ${it.contents.length - 6}…</div>`] : []));
+  if (it.unbreakable) lines.push('<div class="t-blue">Неразрушимый</div>');
+  if (it.damage) lines.push(maxDur(it) ? `<div class="t-dim">Прочность: ${maxDur(it) - it.damage} / ${maxDur(it)}</div>` : `<div class="t-dim">Износ: ${it.damage}</div>`);
+  lines.push(`<div class="t-id">${esc(it.id)}</div>`);
+  return lines.join('');
+}
+function showTip(e, html) {
+  let t = $('#inv-tip'); if (!t) { t = document.createElement('div'); t.id = 'inv-tip'; document.body.appendChild(t); }
+  if (html) t.innerHTML = html;
+  t.hidden = false;
+  const x = Math.min(e.clientX + 16, innerWidth - t.offsetWidth - 8), y = Math.min(e.clientY + 12, innerHeight - t.offsetHeight - 8);
+  t.style.transform = `translate(${x}px, ${y}px)`;
+}
+const hideTip = () => { const t = $('#inv-tip'); if (t) t.hidden = true; };
+function slotItem(kind, slot) { return kind === 'equipment' ? PV.d.equipment[slot] : PV.d[kind].find((x) => x.slot === slot); }
+function slotHtml(kind, slot, label) {
+  const it = slotItem(kind, slot), q = typeof slot === 'string' ? `'${slot}'` : slot;
+  return `<button class="mc-slot ${it ? '' : 'empty'} ${it?.enchanted ? 'ench' : ''} ${it?.dirty ? 'dirty' : ''}" data-k="${kind}" data-s="${slot}"
+    onclick="editSlot('${kind}', ${q})" onmousemove="slotTip(event,'${kind}',${q})" onmouseleave="hideTip()"
+    ${PV.d.running ? '' : `${it ? 'draggable="true"' : ''} ondragstart="slotDrag(event,'${kind}',${q})" ondragend="slotDragEnd()" ondragover="slotOver(event)" ondragleave="this.classList.toggle('over', false)" ondrop="slotDrop(event,'${kind}',${q})"`}>
+    ${it ? itemIcon(it.id) + (it.name ? `<img class="mc-tag" src="${MCA}/item/name_tag.png" alt="" title="Переименован">` : '') + (it.count > 1 ? `<b>${it.count}</b>` : '') + (it.damage && maxDur(it) ? `<i class="dur" style="--d:${Math.max(0, 1 - it.damage / maxDur(it))}"></i>` : '') : label ? `<img class="mc-ghost" src="${MCA}/gui/sprites/container/slot/${label}.png" alt="">` : ''}</button>`;
+}
+const EQ_NAME = { head: 'Шлем', chest: 'Нагрудник', legs: 'Поножи', feet: 'Ботинки', offhand: 'Вторая рука' };
+function slotTip(e, kind, slot) { const it = slotItem(kind, slot); if (it) showTip(e, tipHtml(it)); else if (kind === 'equipment') showTip(e, `<div class="t-dim">${EQ_NAME[slot]} — пусто</div>`); else hideTip(); }
+// ---------- здоровье, голод, опыт как в игре: клик меняет значение ----------
+function hudHtml() {
+  const d = PV.d, ro = d.running;
+  const row = (val, full, half, empty, key, title) => `<div class="mc-bar" title="${title}: ${val} из 20">${Array.from({ length: 10 }, (_, i) => {
+    const v = val - i * 2, img = v >= 2 ? full : v === 1 ? half : empty;
+    return `<img src="${MCA}/gui/sprites/hud/${img}.png" ${ro ? '' : `onclick="hudSet('${key}', ${i})"`} alt="">`;
+  }).join('')}</div>`;
+  const hp = Math.round(d.health), food = Math.round(d.food);
+  return `<div class="mc-hud">
+    <div class="mc-hud-row">${row(hp, 'heart/full', 'heart/half', 'heart/container', 'health', 'Здоровье')}<span class="mc-num">${String(Math.round(d.health * 2) / 2).replace('.', ',')}</span>
+      <span class="grow"></span><span class="mc-num">${food}</span>${row(food, 'food_full', 'food_half', 'food_empty', 'food', 'Голод').replace('class="mc-bar"', 'class="mc-bar rtl"')}</div>
+    <div class="mc-xp"><div class="mc-xp-bar" style="--p:${Math.max(0, Math.min(1, d.xpP || 0))}"></div>
+      ${ro ? `<span class="mc-lvl">${d.xpLevel}</span>` : `<input class="mc-lvl" type="number" min="0" value="${d.xpLevel}" title="Уровень опыта" onchange="PV.d.xpLevel=Math.max(0,parseInt(this.value)||0);markDirty()">`}</div></div>`;
+}
+function hudSet(key, i) {
+  const v = Math.round(PV.d[key]);
+  PV.d[key] = v === (i + 1) * 2 ? (i + 1) * 2 - 1 : v === (i + 1) * 2 - 1 && i === 0 ? 0 : (i + 1) * 2;
+  markDirty(); renderPlayer();
+}
+function markDirty() { PV.dirty = true; const s = $('#pv-dirty'); if (s) s.style.display = ''; }
+function renderPlayer() {
+  const b = $('#pv-body'); if (!b) return;
+  const d = PV.d, gm = ['Выживание', 'Творчество', 'Приключение', 'Наблюдатель'];
+  const row = (from) => Array.from({ length: 9 }, (_, i) => slotHtml('inventory', from + i)).join('');
+  const eq = [['head', 'helmet'], ['chest', 'chestplate'], ['legs', 'leggings'], ['feet', 'boots']];
+  b.innerHTML = `<div class="mc-inv">
+      <div class="mc-top"><div class="mc-eq">${eq.map(([k, l]) => slotHtml('equipment', k, l)).join('')}</div>
+        <div class="mc-body"><img src="https://mc-heads.net/body/${encodeURIComponent(PV.name)}/120" onerror="this.remove()" alt=""></div>
+        <div class="mc-eq">${slotHtml('equipment', 'offhand', 'shield')}</div>
+        <div class="mc-side"><div class="field"><label>Режим игры</label><select ${d.running ? 'disabled' : ''} onchange="PV.d.gameMode=+this.value;markDirty()">${gm.map((t, i) => `<option value="${i}" ${d.gameMode === i ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+          <div class="small dim">Позиция: ${d.pos?.length ? d.pos.map((x) => Math.round(x)).join(', ') : '—'}<br>${esc(String(d.dimension || '').replace('minecraft:', ''))}</div></div></div>
+      <div class="mc-grid">${row(9)}${row(18)}${row(27)}</div>
+      ${hudHtml()}
+      <div class="mc-grid">${row(0)}</div>
+      <div class="mc-title">Эндер-сундук</div>
+      <div class="mc-grid">${Array.from({ length: 27 }, (_, i) => slotHtml('ender', i)).join('')}</div></div>`;
+}
+async function openPlayer(sid, name, keep) {
+  if (!keep) {
+    let d;
+    try { d = await call('players.data', { id: sid, name }); } catch (e) { return alertDialog(e.message, name, 'users'); }
+    Object.assign(PV, { sid, name, d, dirty: false });
+  }
+  const d = PV.d, ro = d.running;
+  const v = await modal({ title: name, icon: 'users', wide: true,
+    body: `<div class="small dim" style="margin:-6px 0 10px">UUID ${esc(d.uuid)}${ro ? ` · <span style="color:var(--yellow)">${ic('alert')} сервер работает — только просмотр, для правки остановите его</span>` : ' · наведите на предмет — подробности, клик — изменить'}
+      <span id="pv-dirty" class="badge yellow" style="margin-left:6px;${PV.dirty ? '' : 'display:none'}">не сохранено</span></div><div id="pv-body"></div>`,
+    onOpen: (ov) => { ov.querySelector('.modal')?.classList.add('mc-modal'); renderPlayer(); },
+    buttons: [{ label: 'Закрыть', value: null }, ...(ro ? [] : [{ label: 'Сохранить', cls: 'primary', default: true, value: 'save' }])] });
+  hideTip();
+  if (v !== 'save') {
+    if (PV.dirty && !(await confirmDialog('Изменения не сохранены и будут потеряны.', { title: 'Закрыть без сохранения?', ok: 'Закрыть', danger: true }))) return openPlayer(sid, name, true);
+    return;
+  }
+  try {
+    const r = await call('players.saveData', { id: sid, name, patch: { health: d.health, food: d.food, xpLevel: d.xpLevel, gameMode: d.gameMode, inventory: d.inventory, ender: d.ender, equipment: d.equipment } });
+    PV.d = r; PV.dirty = false;
+    toast(`Данные ${name} сохранены`, 'ok');
+  } catch (e) { await alertDialog(e.message, 'Не сохранено', 'alert'); return openPlayer(sid, name, true); }
+}
+// ---------- правка предмета ----------
+function enchRows(list) {
+  const all = { ...ENCH, ...NAMES.ench }, list2 = Object.entries(all).sort((a, b) => a[1].localeCompare(b[1], 'ru'));
+  const opts = (cur) => list2.map(([k, t]) => `<option value="minecraft:${k}" ${short(cur) === k ? 'selected' : ''}>${esc(t)}</option>`).join('') + (cur && !all[short(cur)] ? `<option value="${esc(cur)}" selected>${esc(cur)}</option>` : '');
+  return list.map((e, i) => `<div class="row nowrap ench-row" data-i="${i}"><select data-e="id">${opts(e.id)}</select><input data-e="lvl" type="number" min="1" max="255" value="${e.lvl}" style="width:80px"><button class="ghost icon sm" onclick="this.closest('.ench-row').remove()">${ic('x')}</button></div>`).join('');
+}
+async function editSlot(kind, slot) {
+  hideTip();
+  const cur = slotItem(kind, slot), ro = PV.d.running;
+  if (ro && !cur) return;
+  const it = cur ? JSON.parse(JSON.stringify(cur)) : { id: '', count: 1, enchants: [], stored: [], lore: [] };
+  const book = (id) => short(id) === 'enchanted_book';
+  const body = `<div class="stack">
+    ${cur ? `<div class="mc-tip-inline">${tipHtml(cur)}</div>` : ''}
+    <div class="form-grid"><div class="field"><label>Предмет</label><input id="ie-id" list="ie-items" value="${esc(it.id)}" placeholder="начните вводить: алмазный меч или diamond_sword" ${ro ? 'disabled' : ''} oninput="itemHint(this)"><span class="hint" id="ie-hint">${it.id ? esc(itemName(it.id)) : ''}</span><datalist id="ie-items"></datalist></div>
+      <div class="field"><label>Количество</label><input id="ie-count" type="number" min="1" max="99" value="${it.count}" ${ro ? 'disabled' : ''}></div>
+      <div class="field full"><label>Название</label><input id="ie-name" value="${esc(trText(it.name) || '')}" placeholder="как в игре — без названия" ${ro ? 'disabled' : ''}></div>
+      <div class="field full"><label>Описание (каждая строка — отдельно)</label><textarea id="ie-lore" rows="2" ${ro ? 'disabled' : ''}>${esc((it.lore || []).join('\n'))}</textarea></div>
+      <div class="field"><label>Износ (0 — новый)</label><input id="ie-dmg" type="number" min="0" value="${it.damage || 0}" ${ro ? 'disabled' : ''}>${maxDur(it) ? `<span class="hint">полная прочность: ${maxDur(it)}</span>` : ''}</div>
+      <div class="field"><label>&nbsp;</label><label class="switch"><input type="checkbox" id="ie-unb" ${it.unbreakable ? 'checked' : ''} ${ro ? 'disabled' : ''}><span class="track"></span>Неразрушимый</label></div></div>
+    <div><div class="row" style="justify-content:space-between"><b class="small">Зачарования</b>${ro ? '' : `<button class="sm" onclick="$('#ie-ench').insertAdjacentHTML('beforeend', enchRows([{id:'minecraft:sharpness',lvl:1}]))">${ic('plus')}Добавить</button>`}</div>
+      <div id="ie-ench" class="stack" style="gap:6px;margin-top:6px">${enchRows(book(it.id) ? it.stored || [] : it.enchants || [])}</div>
+      <p class="hint" style="margin:6px 0 0">Можно любые уровни, в том числе выше обычных (например, Острота X). У зачарованных книг — «хранимые» зачарования.</p></div>
+    ${it.contents?.length ? `<div><b class="small">Содержимое (${it.contents.length})</b><div class="small dim">${it.contents.map((c) => `${esc(trText(c.name) || itemName(c.id))} ×${c.count}`).join(' · ')}</div></div>` : ''}
+    ${it.raw ? `<details><summary class="small dim" style="cursor:pointer">Все данные предмета</summary><pre class="mono small selectable" style="max-height:200px;overflow:auto;white-space:pre-wrap">${esc(JSON.stringify(it.raw, null, 2))}</pre></details>` : ''}</div>`;
+  const r = await modal({ title: cur ? trText(cur.name) || itemName(cur.id) : 'Положить предмет', icon: 'package', wide: true, body,
+    buttons: ro ? [{ label: 'Закрыть', value: null }] : [...(cur ? [{ label: 'Убрать из слота', cls: 'danger', value: 'remove' }] : []), { label: 'Отмена', value: null }, { label: 'Готово', cls: 'primary', default: true, value: (ov) => {
+      const ench = $$('.ench-row', ov).map((row) => ({ id: $('[data-e=id]', row).value, lvl: Math.max(1, parseInt($('[data-e=lvl]', row).value) || 1) }));
+      const id = $('#ie-id', ov).value.trim().toLowerCase();
+      return { id: id ? (id.includes(':') ? id : 'minecraft:' + id) : '', count: Math.max(1, Math.min(99, parseInt($('#ie-count', ov).value) || 1)), name: $('#ie-name', ov).value.trim(),
+        lore: $('#ie-lore', ov).value.split('\n').map((x) => x.trim()).filter(Boolean), damage: Math.max(0, parseInt($('#ie-dmg', ov).value) || 0), unbreakable: $('#ie-unb', ov).checked, ench };
+    } }] });
+  if (!r) return;
+  let item = null;
+  if (r !== 'remove' && r.id) {
+    const isBook = book(r.id);
+    item = { ...it, slot, id: r.id, count: r.count, name: r.name, lore: r.lore, damage: r.damage, unbreakable: r.unbreakable,
+      enchants: isBook ? [] : r.ench, stored: isBook ? r.ench : [], enchanted: r.ench.length > 0, dirty: true };
+  }
+  if (kind === 'equipment') { if (item) PV.d.equipment[slot] = item; else delete PV.d.equipment[slot]; }
+  else PV.d[kind] = PV.d[kind].filter((x) => x.slot !== slot).concat(item ? [item] : []);
+  markDirty(); renderPlayer();
+}
+
+// подсказки при вводе предмета: ищем и по русскому названию, и по id
+function itemHint(inp) {
+  const q = inp.value.trim().toLowerCase(), h = $('#ie-hint'), dl = $('#ie-items');
+  if (h) h.textContent = q ? NAMES.item[short(q)] || '' : '';
+  if (!dl || q.length < 2) return;
+  const found = Object.entries(NAMES.item).filter(([k, t]) => k.includes(q.replace(/^minecraft:/, '')) || t.toLowerCase().includes(q)).slice(0, 30);
+  dl.innerHTML = found.map(([k, t]) => `<option value="minecraft:${k}">${esc(t)}</option>`).join('');
+}
+
+// ---------- перетаскивание: свободный слот — переложить, занятый — поменять местами ----------
+function slotDrag(e, kind, slot) {
+  hideTip();
+  PV.drag = { kind, slot };
+  e.dataTransfer.effectAllowed = 'move';
+  const img = e.currentTarget.querySelector('img'); if (img) e.dataTransfer.setDragImage(img, 17, 17);
+  const el = e.currentTarget; setTimeout(() => el.classList.add('dragging'), 0);
+}
+function slotDragEnd() { PV.drag = null; $$('.mc-slot.dragging, .mc-slot.over').forEach((x) => x.classList.toggle('dragging', false) || x.classList.toggle('over', false)); }
+function slotOver(e) { if (!PV.drag) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.currentTarget.classList.add('over'); }
+function setSlot(kind, slot, it) {
+  if (kind === 'equipment') { if (it) PV.d.equipment[slot] = { ...it, slot }; else delete PV.d.equipment[slot]; }
+  else PV.d[kind] = PV.d[kind].filter((x) => x.slot !== slot).concat(it ? [{ ...it, slot }] : []);
+}
+function slotDrop(e, kind, slot) {
+  e.preventDefault();
+  const src = PV.drag; slotDragEnd();
+  if (!src || (src.kind === kind && src.slot === slot)) return;
+  const a = slotItem(src.kind, src.slot), b = slotItem(kind, slot);
+  if (!a) return;
+  // одинаковые предметы без свойств складываются в стопку (до 64), остальное меняется местами
+  const plain = (x) => x && !x.name && !x.enchanted && !x.damage && !x.lore?.length && !x.contents?.length && !x.potion;
+  if (b && a.id === b.id && plain(a) && plain(b) && b.count < 64) {
+    const moved = Math.min(64 - b.count, a.count);
+    setSlot(kind, slot, { ...b, count: b.count + moved });
+    setSlot(src.kind, src.slot, a.count - moved > 0 ? { ...a, count: a.count - moved } : null);
+  } else { setSlot(kind, slot, a); setSlot(src.kind, src.slot, b); }
+  markDirty(); renderPlayer();
 }

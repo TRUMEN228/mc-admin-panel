@@ -101,7 +101,8 @@ async function newPack(pre = {}) {
 }
 async function importPack() {
   const kind = await modal({ title: 'Импорт', icon: 'import', body: '<p>Откуда взять моды?</p>',
-    buttons: [{ label: 'Отмена', value: null }, { label: 'Файл .mrpack', value: 'mrpack' }, { label: 'Папка mods', cls: 'primary', value: 'folder' }] });
+    buttons: [{ label: 'Отмена', value: null }, { label: 'Код от друга', value: 'code' }, { label: 'Файл .mrpack', value: 'mrpack' }, { label: 'Папка mods', cls: 'primary', value: 'folder' }] });
+  if (kind === 'code') return importCode();
   if (kind === 'mrpack') {
     const f = await T.dialog.open({ filters: [{ name: 'Сборка Modrinth', extensions: ['mrpack'] }] }); if (!f) return;
     toast('Импорт сборки…', 'info', 2500);
@@ -126,10 +127,10 @@ async function pPack(id) {
   S.pack = p;
   setTop({ title: p.name, crumbs: [['Сборки', 'home'], [p.name]],
     sub: `<span class="badge">${ic('cube')}${LOADERS[p.loader] || p.loader} ${esc(p.mc)}</span><span class="badge">v${esc(p.version)}</span>`,
-    actions: `<button onclick="packMenu()">${ic('more')}</button><button onclick="installClient()">${ic('play')}В мой Minecraft</button><button class="primary" onclick="exportPack()">${ic('upload')}Экспорт .mrpack</button>` });
+    actions: `<button onclick="packMenu()">${ic('more')}</button><button onclick="sharePack()">${ic('share')}Поделиться</button><button onclick="changeVersion()">${ic('layers')}Другая версия MC</button><button onclick="installClient()">${ic('play')}В мой Minecraft</button><button class="primary" onclick="exportPack()">${ic('upload')}Экспорт .mrpack</button>` });
   setPage(`<div class="grid g2 fx-row"><div class="card fx-card drop-zone" data-drop="1">
       <div class="card-head"><h3>Моды <span class="count" id="mcount">${p.mods.length}</span></h3>
-        <button class="sm" onclick="checkPack()" id="chk-btn">${ic('refresh')}Проверить</button>
+        <button class="sm" onclick="compatPack(this)">${ic('shield')}Совместимость</button><button class="sm" onclick="checkPack()" id="chk-btn">${ic('refresh')}Проверить</button>
         <button class="sm" onclick="addMenu()">${ic('plus')}Добавить</button></div>
       <div class="input-icon" style="margin-bottom:8px">${ic('search')}<input id="mf" placeholder="Фильтр…" oninput="filterMods()"></div>
       <div class="scroll" id="modlist">${modsHtml(p)}</div>
@@ -226,10 +227,14 @@ async function packMenu() {
 }
 async function changeVersion() {
   const p = S.pack;
-  const r = await formDialog({ title: 'Сменить версию', icon: 'layers', ok: 'Подобрать моды', fields: await versionFields(p.mc, p.loader) });
+  const r = await formDialog({ title: 'Перевести сборку на другую версию', icon: 'layers', ok: 'Подобрать моды',
+    fields: [...(await versionFields(p.mc, p.loader)), { key: 'copy', label: 'Куда', value: 'copy', options: [['copy', 'В копию сборки (эта останется как есть)'], ['self', 'В эту сборку']] }] });
   if (!r) return;
-  toast('Подбираю версии модов…', 'info', 4000);
-  const res = await api('packs.changeVersion', { id: p.id, mc: r.mc, loader: r.loader, loaderVersion: '' });
+  let id = p.id;
+  if (r.copy === 'copy') { const n = await api('packs.duplicate', { id }); id = n.id; await api('packs.update', { id, patch: { name: `${p.name} (${r.mc})` } }); }
+  toast('Подбираю версии всех модов…', 'info', 4000);
+  const res = await api('packs.changeVersion', { id, mc: r.mc, loader: r.loader, loaderVersion: '' });
+  await loadPacks(); if (id !== p.id) go('pack/' + id);
   if (res.missing.length) alertDialog(`Нет версий для ${LOADERS[r.loader]} ${r.mc}:\n\n${res.missing.join('\n')}\n\nОни отмечены красным — уберите их или поищите замену.`, 'Не все моды доступны', 'alert');
   else toast(`Сборка переведена на ${LOADERS[r.loader]} ${r.mc}`);
   route();
@@ -426,3 +431,59 @@ T.webview.getCurrentWebview().onDragDropEvent((e) => {
   await route();
   if (S.settings.autoUpdateCheck !== false && !S.info.debug) setTimeout(() => checkAppUpdate(false), 5000);
 })();
+
+// ---------- поделиться сборкой: компактный код (deflate + base64url) ----------
+async function packCode(obj) {
+  const st = new Blob([JSON.stringify(obj)]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+  const b = new Uint8Array(await new Response(st).arrayBuffer());
+  let t = ''; for (let i = 0; i < b.length; i += 0x8000) t += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+  return 'MCC1.' + btoa(t).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+async function unpackCode(code) {
+  const m = code.trim().match(/MCC1\.([A-Za-z0-9_-]+)/); if (!m) throw new Error('Это не код сборки — он начинается с MCC1.');
+  const bin = atob(m[1].replace(/-/g, '+').replace(/_/g, '/')), b = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+  const st = new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return JSON.parse(await new Response(st).text());
+}
+async function sharePack() {
+  const d = await api('packs.shareData', { id: S.pack.id });
+  const code = await packCode(d);
+  await modal({ title: 'Поделиться сборкой', icon: 'share', wide: true,
+    body: `<p class="small" style="margin-top:0">Отправьте код другу — в MC Mod Collector: «Импорт → Код от друга». Сборка откроется с теми же версиями модов (${d.mods.length}).</p>
+      <textarea class="mono selectable" readonly style="height:140px;font-size:11.5px;word-break:break-all" onclick="this.select()">${esc(code)}</textarea>
+      ${d.skipped.length ? `<p class="small" style="color:var(--yellow)">${ic('alert')} Не войдут — добавлены из файлов на этом ПК: ${d.skipped.map(esc).join(', ')}</p>` : ''}`,
+    buttons: [{ label: 'Закрыть', value: null }, { label: 'Копировать код', cls: 'primary', default: true, value: 'copy' }] }).then((v) => {
+    if (v === 'copy') navigator.clipboard.writeText(code).then(() => toast('Код скопирован', 'ok'), () => toast('Не удалось скопировать', 'error'));
+  });
+}
+async function importCode() {
+  const t = await promptDialog({ title: 'Импорт по коду', label: 'Код сборки от друга', placeholder: 'MCC1.…', ok: 'Импортировать' });
+  if (!t) return;
+  try {
+    const d = await unpackCode(t);
+    const r = await api('packs.importShare', { data: d });
+    toast(`Сборка «${d.name}» импортирована: ${r.count} модов`, 'ok');
+    await loadPacks(); go('pack/' + r.id);
+  } catch (e) { toast(e.message, 'error'); }
+}
+// ---------- совместимость ----------
+async function compatPack(b) {
+  b.disabled = true; const old = b.innerHTML; b.innerHTML = ic('loader', 'spin') + 'Проверка…';
+  let r; try { r = await api('packs.compat', { id: S.pack.id }); } catch { return; } finally { b.disabled = false; b.innerHTML = old; }
+  const sec = (title, cls, items) => (items.length ? `<div class="set-group-title" style="${cls ? `color:var(--${cls})` : ''}">${title}</div><div class="set-list">${items.join('')}</div>` : '');
+  const row = (t, d, extra = '') => `<div class="set-item" style="padding:10px 14px"><div class="txt"><b>${t}</b>${d ? `<span>${d}</span>` : ''}</div>${extra}</div>`;
+  const ok = !r.missing.length && !r.conflicts.length;
+  const v = await modal({ title: 'Совместимость сборки', icon: 'shield', wide: true,
+    body: `${ok ? `<p style="color:var(--accent-fg);margin-top:0">${ic('check')} Обязательные зависимости на месте, конфликтов не найдено.</p>` : ''}
+      ${sec('Не хватает зависимостей', 'red', r.missing.map((m) => row(esc(m.name), 'нужен для: ' + m.by.map(esc).join(', '))))}
+      ${sec('Конфликты', 'red', r.conflicts.map((c) => row(`${esc(c.a)} ✕ ${esc(c.b)}`, 'моды несовместимы — оставьте один из них')))}
+      ${sec('Только для клиента — на сервер не попадут', '', r.clientOnly.map((n) => row(esc(n), '')))}
+      ${sec('Только для сервера — в Minecraft игрока не попадут', '', r.serverOnly.map((n) => row(esc(n), '')))}
+      ${r.unchecked ? `<p class="small dim">${ic('info')} Зависимости проверены для модов с Modrinth; модов из других источников: ${r.unchecked}.</p>` : ''}`,
+    buttons: [{ label: 'Закрыть', value: null }, ...(r.missing.length ? [{ label: `Добавить недостающие (${r.missing.length})`, cls: 'primary', default: true, value: 'add' }] : [])] });
+  if (v === 'add') {
+    for (const m of r.missing) await call('packs.add', { id: S.pack.id, provider: 'modrinth', project: m.project }).catch((e) => toast(`${m.name}: ${e.message}`, 'error'));
+    toast('Зависимости добавлены', 'ok'); refreshPack();
+  }
+}

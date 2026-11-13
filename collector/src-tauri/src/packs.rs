@@ -372,3 +372,64 @@ pub fn folder_jars(path: &str) -> Vec<String> {
     let d = if d.join("mods").is_dir() { d.join("mods") } else { d };
     mccore::ls(&d).into_iter().filter(|f| f.to_lowercase().ends_with(".jar")).map(|f| d.join(f).to_string_lossy().to_string()).collect()
 }
+
+// ---------- поделиться сборкой ----------
+/// Данные для кода «Поделиться»: метаданные и моды из каталогов/по ссылкам (локальные файлы передать нельзя).
+pub fn share_data(id: &str) -> Res<Value> {
+    let p = load(id)?;
+    let (mods, skipped): (Vec<Value>, Vec<Value>) = p.mods.iter().cloned().partition(|m| m["source"] != "file");
+    let mods: Vec<Value> = mods.into_iter().map(|mut m| { if let Some(o) = m.as_object_mut() { o.remove("desc"); } m }).collect();
+    Ok(json!({ "v": 1, "name": p.name, "author": p.author, "version": p.version, "description": p.description, "mc": p.mc, "loader": p.loader,
+        "loaderVersion": p.loader_version, "mods": mods, "skipped": skipped.iter().map(|m| m["name"].clone()).collect::<Vec<_>>() }))
+}
+/// Новая сборка из кода «Поделиться» — с теми же версиями модов.
+pub fn import_share(d: &Value) -> Res<Value> {
+    if d["v"] != 1 || d["mc"].as_str().unwrap_or("").is_empty() { mccore::bail!("Это не код сборки MC Mod Collector"); }
+    let mut p = Pack {
+        id: core::new_id(), name: d["name"].as_str().unwrap_or("Сборка").into(), author: d["author"].as_str().unwrap_or("").into(),
+        version: d["version"].as_str().unwrap_or("1.0.0").into(), description: d["description"].as_str().unwrap_or("").into(),
+        mc: d["mc"].as_str().unwrap_or("").into(), loader: d["loader"].as_str().unwrap_or("fabric").into(),
+        loader_version: d["loaderVersion"].as_str().unwrap_or("").into(), created: now_ms(), updated: 0, mods: vec![],
+    };
+    merge(&mut p, d["mods"].as_array().cloned().unwrap_or_default());
+    save(&mut p)?;
+    Ok(json!({ "id": p.id, "count": p.mods.len() }))
+}
+
+// ---------- проверка совместимости ----------
+/// Недостающие обязательные зависимости, конфликты (несовместимые моды) и моды только для клиента/сервера.
+pub async fn compat(id: &str) -> Res<Value> {
+    let p = load(id)?;
+    let have: std::collections::HashSet<String> = p.mods.iter().filter_map(|m| m["project"].as_str().map(String::from)).collect();
+    let name_of = |pid: &str| p.mods.iter().find(|m| m["project"] == pid).and_then(|m| m["name"].as_str()).unwrap_or(pid).to_string();
+    let vids: Vec<String> = p.mods.iter().filter(|m| m["source"] == "modrinth").filter_map(|m| m["versionId"].as_str().map(String::from)).collect();
+    let (mut missing, mut conflicts) = (std::collections::BTreeMap::<String, Vec<String>>::new(), vec![]);
+    for chunk in vids.chunks(100) {
+        let url = format!("https://api.modrinth.com/v2/versions?ids={}", urlencoding::encode(&serde_json::to_string(chunk).unwrap_or_default()));
+        for v in http::get_json(&url).await?.as_array().cloned().unwrap_or_default() {
+            let owner = name_of(v["project_id"].as_str().unwrap_or(""));
+            for d in v["dependencies"].as_array().cloned().unwrap_or_default() {
+                let Some(dp) = d["project_id"].as_str() else { continue };
+                match d["dependency_type"].as_str() {
+                    Some("required") if !have.contains(dp) => missing.entry(dp.to_string()).or_default().push(owner.clone()),
+                    Some("incompatible") if have.contains(dp) => conflicts.push(json!({ "a": owner, "b": name_of(dp) })),
+                    _ => {}
+                }
+            }
+        }
+    }
+    // названия недостающих проектов
+    let mut miss = vec![];
+    if !missing.is_empty() {
+        let ids: Vec<&String> = missing.keys().collect();
+        let url = format!("https://api.modrinth.com/v2/projects?ids={}", urlencoding::encode(&serde_json::to_string(&ids).unwrap_or_default()));
+        let projs = http::get_json(&url).await.unwrap_or(json!([]));
+        for (pid, by) in &missing {
+            let t = projs.as_array().and_then(|a| a.iter().find(|x| x["id"] == pid.as_str())).and_then(|x| x["title"].as_str()).unwrap_or(pid);
+            miss.push(json!({ "project": pid, "name": t, "by": by }));
+        }
+    }
+    let side = |k: &str| p.mods.iter().filter(|m| m[k] == "unsupported").map(|m| m["name"].clone()).collect::<Vec<_>>();
+    Ok(json!({ "missing": miss, "conflicts": conflicts, "clientOnly": side("server"), "serverOnly": side("client"),
+        "unchecked": p.mods.iter().filter(|m| m["source"] != "modrinth").count() }))
+}

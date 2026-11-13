@@ -1,6 +1,6 @@
 //! Единая точка входа: команды UI (через IPC Tauri или веб-режим).
 use crate::core::{self, arg_str, Res};
-use crate::{backups, diagnose, files, importer, installer, modpack, mods, network, providers, servers};
+use crate::{backups, diagnose, files, importer, installer, modpack, mods, network, playerdata, providers, servers, tools};
 use serde_json::{json, Value};
 
 fn strs(a: &Value, k: &str) -> Vec<String> {
@@ -58,6 +58,15 @@ pub async fn dispatch(cmd: &str, a: Value, web: bool) -> Res<Value> {
         "servers.create" => servers::create(&a),
         "servers.import" => importer::import_servers(&s("path")).await,
         "servers.update" => servers::update(&id, &a["patch"]),
+        "backups.testRemote" => backups::webdav_test().await,
+        "servers.clone" => tools::clone(&id, &s("name"), a["withWorld"].as_bool().unwrap_or(true)),
+        "tools.status" => tools::status(&id),
+        "players.data" => playerdata::get(&id, &s("name")).await,
+        "players.saveData" => playerdata::save(&id, &s("name"), &a["patch"]).await,
+        "players.transfer" => tools::transfer_player(&id, &s("from"), &s("to")).await,
+        "tools.mapEnable" => tools::map_enable(&id).await,
+        "tools.playit" => { if web { crate::bail!("Запуск playit.gg — только в самой панели"); } tools::playit_start().await }
+        "servers.playerStats" => Ok(servers::player_stats(&id)),
         "servers.setIcon" => servers::set_icon(&id, a["data"].as_str().unwrap_or("")),
         "servers.remove" => { servers::remove(&id, a["files"].as_bool().unwrap_or(false)).await?; ok() }
         "servers.start" => { servers::start(id).await?; ok() }

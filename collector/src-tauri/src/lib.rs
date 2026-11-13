@@ -38,6 +38,9 @@ pub async fn dispatch(cmd: &str, a: Value) -> Res<Value> {
         "packs.addUrl" => packs::add_url(&id, &s("url")).await,
         "packs.remove" => { packs::remove(&id, &s("key"))?; ok() }
         "packs.setSide" => { packs::set_side(&id, &s("key"), &s("client"), &s("server"))?; ok() }
+        "packs.shareData" => packs::share_data(&id),
+        "packs.importShare" => packs::import_share(&a["data"]),
+        "packs.compat" => packs::compat(&id).await,
         "packs.check" => packs::check(&id, None, None).await,
         "packs.applyUpdates" => Ok(json!({ "updated": packs::apply_updates(&id, &a["entries"])? })),
         "packs.changeVersion" => packs::change_version(&id, &s("mc"), &s("loader"), &s("loaderVersion")).await,

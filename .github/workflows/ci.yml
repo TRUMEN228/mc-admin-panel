@@ -19,6 +19,12 @@ jobs:
           workspaces: .
       - name: Синтаксис интерфейса
         shell: bash
-        run: for f in ui/js/*.js collector/ui/js/*.js; do node --check "$f"; done
+        run: for f in ui/js/*.js collector/ui/js/*.js mobile/ui/js/*.js; do node --check "$f"; done
       - name: Тесты Rust
         run: cargo test --workspace --lib
+      - name: Тесты интерфейса
+        shell: bash
+        run: |
+          npm ci
+          npx playwright install chromium
+          npx playwright test

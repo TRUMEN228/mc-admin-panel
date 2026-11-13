@@ -1,4 +1,5 @@
 //! MC Admin Panel — нативное приложение (Tauri 2 + Rust) для управления серверами Minecraft.
+pub mod alerts;
 pub mod api;
 pub mod backups;
 pub mod core;
@@ -10,7 +11,9 @@ pub mod mobile;
 pub mod mods;
 pub mod native;
 pub mod network;
+pub mod playerdata;
 pub mod servers;
+pub mod tools;
 pub mod web;
 pub use mccore::{http, modmeta, modpack, providers};
 

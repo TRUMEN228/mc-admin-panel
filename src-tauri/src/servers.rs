@@ -87,6 +87,12 @@ pub struct Runtime {
     exit_rx: Option<watch::Receiver<bool>>,
     waiters: Vec<(Regex, oneshot::Sender<String>)>,
     fetching_java: bool,
+    /// TPS по последнему замеру; до какого момента ответы на замер скрываются из консоли
+    pub tps: Option<f64>,
+    probe_until: u64,
+    low_tps: u8,
+    /// открытые игровые сессии: игрок → время входа
+    sessions: HashMap<String, u64>,
 }
 pub static RT: Lazy<Mutex<HashMap<String, Runtime>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 fn rt<R>(id: &str, f: impl FnOnce(&mut Runtime) -> R) -> R {
@@ -94,6 +100,13 @@ fn rt<R>(id: &str, f: impl FnOnce(&mut Runtime) -> R) -> R {
     let r = m.entry(id.to_string()).or_insert_with(|| Runtime { status: "stopped", ..Default::default() });
     f(r)
 }
+/// Папка активного мира сервера (level-name в server.properties, по умолчанию «world»).
+pub fn world_dir(s: &Server) -> PathBuf {
+    let txt = std::fs::read_to_string(props_path(s)).unwrap_or_default();
+    let name = parse_props(&txt).into_iter().find(|(k, _)| k == "level-name").map(|(_, v)| v).filter(|v| !v.trim().is_empty()).unwrap_or_else(|| "world".into());
+    Path::new(&s.dir).join(name.trim())
+}
+pub fn online_players(id: &str) -> Vec<String> { rt(id, |r| r.players.iter().cloned().collect()) }
 pub fn is_running(id: &str) -> bool { rt(id, |r| r.pid.is_some()) }
 pub fn status(id: &str) -> &'static str { rt(id, |r| r.status) }
 
@@ -103,6 +116,7 @@ pub fn view(s: &Server) -> Value {
         v["status"] = json!(r.status);
         v["players"] = json!(r.players.iter().collect::<Vec<_>>());
         v["started"] = json!(r.started);
+        v["tps"] = json!(r.tps);
         v["stats"] = json!(r.stats);
         v["history"] = json!(r.history.iter().map(|h| json!([h.0, h.1, h.2, h.3])).collect::<Vec<_>>());
     });
@@ -141,7 +155,130 @@ static RE_DONE: Lazy<Regex> = Lazy::new(|| Regex::new(r"Done \([\d.,]+s\)!").unw
 static RE_JOIN: Lazy<Regex> = Lazy::new(|| Regex::new(r": (\w{2,16}) joined the game").unwrap());
 static RE_LEFT: Lazy<Regex> = Lazy::new(|| Regex::new(r": (\w{2,16}) left the game").unwrap());
 
+static RE_COLOR: Lazy<Regex> = Lazy::new(|| Regex::new(r"§.").unwrap());
+static RE_TPS_PAPER: Lazy<Regex> = Lazy::new(|| Regex::new(r"TPS from last 1m, 5m, 15m: \*?([\d.]+)").unwrap());
+static RE_TPS_TICK: Lazy<Regex> = Lazy::new(|| Regex::new(r"Average time per tick: ([\d.]+) ?ms").unwrap());
+static RE_TPS_FORGE: Lazy<Regex> = Lazy::new(|| Regex::new(r"Overall\s*: Mean tick time: ([\d.]+) ms\. Mean TPS: ([\d.]+)").unwrap());
+static RE_TPS_ANY: Lazy<Regex> = Lazy::new(|| Regex::new(r"(TPS from last|The game is running|Target tick rate|Average time per tick|Percentiles|P50|Mean tick time|Current Memory Usage|The game is (frozen|sprinting|stepping))").unwrap());
+
+/// TPS из строки ответа Paper (`tps`), Forge/NeoForge (`forge tps`) или ванильной `tick query`.
+pub fn parse_tps(line: &str) -> Option<f64> {
+    let clean = RE_COLOR.replace_all(line, "");
+    if let Some(c) = RE_TPS_PAPER.captures(&clean) { return c[1].parse::<f64>().ok(); }
+    if let Some(c) = RE_TPS_TICK.captures(&clean) { return c[1].parse::<f64>().ok().map(|ms| if ms <= 50.0 { 20.0 } else { 1000.0 / ms }); }
+    if let Some(c) = RE_TPS_FORGE.captures(&clean) { return c[2].parse::<f64>().ok(); }
+    None
+}
+/// Разбор ответа на замер TPS (строки ответа в консоль не попадают).
+fn probe_line(id: &str, line: &str) -> bool {
+    let now = now_ms();
+    let clean = RE_COLOR.replace_all(line, "");
+    let tps = parse_tps(&clean);
+    let (hide, alert) = rt(id, |r| {
+        if now > r.probe_until { return (false, false); }
+        let mut alert = false;
+        if let Some(t) = tps {
+            let t = (t.min(20.0) * 10.0).round() / 10.0;
+            r.tps = Some(t);
+            if t < 15.0 { r.low_tps = r.low_tps.saturating_add(1); alert = r.low_tps == 2; } else if t >= 18.0 { r.low_tps = 0; }
+        }
+        (RE_TPS_ANY.is_match(&clean), alert)
+    });
+    if alert {
+        let name = get(id).map(|s| s.name).unwrap_or_default();
+        let t = rt(id, |r| r.tps).unwrap_or(0.0);
+        crate::alerts::raise(&format!("tps-{id}"), "tps", Some(id), &format!("Лаги на «{name}»"), &format!("TPS упал до {}", t.to_string().replace('.', ",")));
+    }
+    hide
+}
+/// Команда замера TPS для ядра и версии (None — ядро не умеет).
+fn tps_probe(s: &Server) -> Option<&'static str> {
+    let v: Vec<u32> = s.mc_version.split(['.', '-']).filter_map(|x| x.parse().ok()).collect();
+    let at_least = |a: u32, b: u32| v.first().copied().unwrap_or(0) > 1 || (v.first() == Some(&1) && (v.get(1).copied().unwrap_or(0), v.get(2).copied().unwrap_or(0)) >= (a, b));
+    match s.loader.as_str() {
+        "paper" | "purpur" | "folia" | "spigot" => Some("tps"),
+        "forge" => Some("forge tps"),
+        "neoforge" => Some("neoforge tps"),
+        _ if at_least(20, 3) => Some("tick query"),
+        _ => None,
+    }
+}
+/// Учёт игровых сессий для статистики игроков.
+fn players_path(id: &str) -> PathBuf { DATA.join("players").join(format!("{id}.json")) }
+fn players_db(id: &str) -> Map<String, Value> { std::fs::read_to_string(players_path(id)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default() }
+fn session_event(id: &str, player: &str, joined: bool) {
+    let now = now_ms();
+    let since = rt(id, |r| if joined { r.sessions.insert(player.to_string(), now); None } else { r.sessions.remove(player) });
+    let mut db = players_db(id);
+    let e = db.entry(player.to_string()).or_insert_with(|| json!({ "first": now, "last": now, "total": 0u64, "sessions": 0u64 }));
+    e["last"] = json!(now);
+    if joined { e["sessions"] = json!(e["sessions"].as_u64().unwrap_or(0) + 1); }
+    if let Some(t) = since { e["total"] = json!(e["total"].as_u64().unwrap_or(0) + now.saturating_sub(t)); }
+    let _ = std::fs::create_dir_all(DATA.join("players"));
+    let _ = std::fs::write(players_path(id), serde_json::to_string(&db).unwrap_or_default());
+}
+fn close_sessions(id: &str) {
+    let open: Vec<String> = rt(id, |r| r.sessions.keys().cloned().collect());
+    for p in open { session_event(id, &p, false); }
+}
+/// Статистика, которую ведёт сам Minecraft (world/stats/<uuid>.json): время в игре, число выходов, даты файлов.
+/// Так видны и игроки, заходившие до появления панели.
+fn game_stats(s: &Server) -> Vec<(String, u64, u64, u64, u64)> {
+    let root = Path::new(&s.dir);
+    let names: HashMap<String, String> = std::fs::read_to_string(root.join("usercache.json")).ok()
+        .and_then(|t| serde_json::from_str::<Vec<Value>>(&t).ok()).unwrap_or_default().into_iter()
+        .filter_map(|e| Some((e["uuid"].as_str()?.to_lowercase(), e["name"].as_str()?.to_string()))).collect();
+    let mtime = |p: &Path| p.metadata().ok().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_millis() as u64);
+    let ctime = |p: &Path| p.metadata().ok().and_then(|m| m.created().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_millis() as u64);
+    let mut out = vec![];
+    let Ok(rd) = std::fs::read_dir(root) else { return out };
+    // только активный мир: в папке сервера могут лежать старые миры с теми же игроками
+    let _ = rd;
+    for w in [world_dir(s)] {
+        let Ok(files) = std::fs::read_dir(w.join("stats")) else { continue };
+        for f in files.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")) {
+            let uuid = f.file_stem().unwrap_or_default().to_string_lossy().to_lowercase();
+            let Some(name) = names.get(&uuid) else { continue };
+            let v: Value = std::fs::read_to_string(&f).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+            let c = &v["stats"]["minecraft:custom"];
+            // play_time с 1.17, раньше play_one_minute (на деле тоже в тиках)
+            let ticks = c["minecraft:play_time"].as_u64().or(c["minecraft:play_one_minute"].as_u64()).unwrap_or(0);
+            let leaves = c["minecraft:leave_game"].as_u64().unwrap_or(0);
+            let pd = w.join("playerdata").join(format!("{uuid}.dat"));
+            let last = mtime(&pd).or(mtime(&f)).unwrap_or(0);
+            let first = [ctime(&f), ctime(&pd)].into_iter().flatten().min().unwrap_or(last);
+            out.push((name.clone(), ticks * 50, leaves, first, last));
+        }
+    }
+    out
+}
+/// Статистика игроков сервера: время в игре, число заходов, первый и последний визит.
+pub fn player_stats(id: &str) -> Value {
+    let now = now_ms();
+    let open = rt(id, |r| r.sessions.clone());
+    let mut db = players_db(id);
+    // объединяем с данными самой игры: берём большее время и число заходов, самые ранние и поздние даты
+    if let Ok(s) = get(id) {
+        for (name, total, leaves, first, last) in game_stats(&s) {
+            let e = db.entry(name).or_insert_with(|| json!({ "first": first, "last": last, "total": 0u64, "sessions": 0u64, "game": true }));
+            let cur = |k: &str| e[k].as_u64().unwrap_or(0);
+            let (t, se, f, l) = (cur("total").max(total), cur("sessions").max(leaves), cur("first").min(first).max(1), cur("last").max(last));
+            e["total"] = json!(t); e["sessions"] = json!(se); e["first"] = json!(f); e["last"] = json!(l);
+        }
+    }
+    let mut list: Vec<Value> = db.into_iter().map(|(name, mut e)| {
+        let live = open.get(&name).map(|t| now.saturating_sub(*t)).unwrap_or(0);
+        e["total"] = json!(e["total"].as_u64().unwrap_or(0) + live);
+        e["online"] = json!(open.contains_key(&name));
+        e["name"] = json!(name);
+        e
+    }).collect();
+    list.sort_by_key(|e| std::cmp::Reverse(e["last"].as_u64().unwrap_or(0)));
+    json!(list)
+}
+
 pub fn push_log(id: &str, line: String) {
+    if probe_line(id, &line) { return; }
     let mut became_running = false;
     let mut joined = None;
     rt(id, |r| {
@@ -155,6 +292,7 @@ pub fn push_log(id: &str, line: String) {
     });
     emit(json!({ "type": "log", "id": id, "line": line }));
     if became_running { set_status(id, "running"); }
+    if let Some((p, j)) = &joined { session_event(id, p, *j); }
     if let Some((p, j)) = joined {
         let players = rt(id, |r| r.players.iter().cloned().collect::<Vec<_>>());
         emit(json!({ "type": "players", "id": id, "name": get(id).map(|s| s.name).unwrap_or_default(), "players": players, "player": p, "joined": j }));
@@ -251,6 +389,16 @@ pub fn same_path(a: &str, b: &str) -> bool {
     let n = |p: &str| p.trim_end_matches(['\\', '/']).replace('/', "\\").to_lowercase();
     n(a) == n(b)
 }
+/// Тесты: сервер только в памяти, без записи servers.json.
+#[cfg(test)]
+pub fn add_mem(s: Server) { LIST.lock().push(s); }
+/// Добавить готовый сервер (клон) в список.
+pub fn add(s: Server) -> Res<String> {
+    let id = s.id.clone();
+    LIST.lock().push(s);
+    save();
+    Ok(id)
+}
 pub fn add_imported(mut s: Server) -> Server {
     s.id = core::new_id();
     s.installed = true; s.imported = true; s.created = now_ms(); s.auto_restart = true;
@@ -342,7 +490,7 @@ pub fn start(id: String) -> BoxFuture<'static, Res<()>> {
         let started = now_ms();
         rt(&id, |r| {
             r.pid = child.id(); r.stdin = stdin; r.kill_tx = Some(kill_tx); r.exit_rx = Some(exit_rx);
-            r.players.clear(); r.started = Some(started); r.stopping = false; r.history.clear();
+            r.players.clear(); r.sessions.clear(); r.started = Some(started); r.stopping = false; r.history.clear(); r.tps = None; r.low_tps = 0;
         });
         set_status(&id, "starting");
         let mut readers = vec![];
@@ -371,9 +519,10 @@ pub fn start(id: String) -> BoxFuture<'static, Res<()>> {
                 Some(_) = kill_rx.recv() => { let _ = child.kill().await; child.wait().await }
             };
             for r in readers { let _ = r.await; }
+            close_sessions(&id);
             let code = st.ok().and_then(|s| s.code()).unwrap_or(-1);
             let stopping = rt(&id, |r| {
-                r.pid = None; r.stdin = None; r.kill_tx = None; r.exit_rx = None; r.stats = None; r.players.clear();
+                r.pid = None; r.stdin = None; r.kill_tx = None; r.exit_rx = None; r.stats = None; r.players.clear(); r.tps = None;
                 r.stopping
             });
             set_status(&id, "stopped");
@@ -396,6 +545,13 @@ pub fn start(id: String) -> BoxFuture<'static, Res<()>> {
     })
 }
 
+/// Команда без записи в консоль (служебные замеры).
+async fn command_silent(id: &str, cmd: &str) -> Res<()> {
+    let stdin = rt(id, |r| r.stdin.clone()).ok_or("Сервер не запущен")?;
+    let mut s = stdin.lock().await;
+    s.write_all(format!("{cmd}\n").as_bytes()).await.ctx("Отправка команды")?;
+    s.flush().await.ctx("Отправка команды")
+}
 pub async fn command(id: &str, cmd: &str) -> Res<()> {
     let stdin = rt(id, |r| r.stdin.clone()).ok_or("Сервер не запущен")?;
     let cmd = cmd.trim();
@@ -428,8 +584,26 @@ pub fn start_monitor() {
         let mut sys = System::new();
         let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) as f32;
         let mut tick = tokio::time::interval(Duration::from_secs(2));
+        let mut n: u64 = 0;
+        let mut disks = sysinfo::Disks::new_with_refreshed_list();
         loop {
             tick.tick().await;
+            n += 1;
+            if n % 15 == 0 {
+                let probes: Vec<(String, &'static str)> = LIST.lock().iter().filter(|s| rt(&s.id, |r| r.status == "running")).filter_map(|s| tps_probe(s).map(|c| (s.id.clone(), c))).collect();
+                for (id, cmd) in probes {
+                    rt(&id, |r| r.probe_until = now_ms() + 4000);
+                    spawn(async move { let _ = command_silent(&id, cmd).await; });
+                }
+            }
+            if n % 30 == 0 {
+                disks.refresh(true);
+                let dir = core::set_str("serversDir");
+                if let Some(d) = disks.list().iter().filter(|d| dir.to_lowercase().starts_with(&d.mount_point().to_string_lossy().to_lowercase())).max_by_key(|d| d.mount_point().as_os_str().len()) {
+                    let free = d.available_space();
+                    if free < 5 * 1_073_741_824 { crate::alerts::raise("disk", "disk", None, "Мало места на диске", &format!("Свободно {:.1} ГБ на {} — бэкапы и миры могут не поместиться", free as f64 / 1_073_741_824.0, d.mount_point().to_string_lossy())); }
+                }
+            }
             let pids: Vec<(String, u32)> = RT.lock().iter().filter_map(|(k, r)| r.pid.map(|p| (k.clone(), p))).collect();
             let list: Vec<Pid> = pids.iter().map(|(_, p)| Pid::from_u32(*p)).collect();
             sys.refresh_processes_specifics(ProcessesToUpdate::Some(&list), true, ProcessRefreshKind::nothing().with_cpu().with_memory());
@@ -443,9 +617,13 @@ pub fn start_monitor() {
                     if let Some(s) = st { r.history.push_back((now, s.cpu, s.mem / 1_048_576, r.players.len())); if r.history.len() > 180 { r.history.pop_front(); } }
                     (r.players.iter().cloned().collect::<Vec<_>>(), r.status)
                 });
-                emit(json!({ "type": "stats", "id": id, "stats": st, "players": players, "status": status, "t": now }));
+                let tps = rt(id, |r| r.tps);
+                emit(json!({ "type": "stats", "id": id, "stats": st, "players": players, "status": status, "t": now, "tps": tps }));
             }
             emit(json!({ "type": "sys", "cpu": (sys.global_cpu_usage() as f64 * 10.0).round() / 10.0, "memUsed": sys.used_memory(), "memTotal": sys.total_memory() }));
+            if sys.total_memory() > 0 && sys.used_memory() as f64 / sys.total_memory() as f64 > 0.93 && !pids.is_empty() {
+                crate::alerts::raise("mem", "mem", None, "Мало памяти на ПК", &format!("Занято {:.1} из {:.0} ГБ — серверы могут начать тормозить или упасть", sys.used_memory() as f64 / 1_073_741_824.0, sys.total_memory() as f64 / 1_073_741_824.0));
+            }
         }
     });
 }

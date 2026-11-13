@@ -23,10 +23,11 @@ struct Store {
     #[serde(default = "yes")] notify_crash: bool,
     #[serde(default = "yes")] notify_players: bool,
     #[serde(default = "yes")] notify_jobs: bool,
+    #[serde(default = "yes")] notify_alerts: bool,
     #[serde(default = "yes")] background: bool,
 }
 fn yes() -> bool { true }
-impl Default for Store { fn default() -> Self { Store { panels: vec![], active: String::new(), notify_crash: true, notify_players: true, notify_jobs: true, background: true } } }
+impl Default for Store { fn default() -> Self { Store { panels: vec![], active: String::new(), notify_crash: true, notify_players: true, notify_jobs: true, notify_alerts: true, background: true } } }
 
 static DIR: OnceCell<PathBuf> = OnceCell::new();
 static STORE: Lazy<Mutex<Store>> = Lazy::new(|| Mutex::new(read(&dir().join("panels.json")).unwrap_or_default()));
@@ -45,7 +46,7 @@ fn save(s: &Store) {
             let mut addrs = vec![];
             if !p.good.is_empty() { addrs.push(p.good.clone()); }
             addrs.extend(p.addresses.iter().filter(|a| **a != p.good).cloned());
-            json!({ "name": p.name, "port": p.port, "token": p.token, "addresses": addrs, "crash": s.notify_crash, "players": s.notify_players, "jobs": s.notify_jobs })
+            json!({ "name": p.name, "port": p.port, "token": p.token, "addresses": addrs, "crash": s.notify_crash, "players": s.notify_players, "jobs": s.notify_jobs, "alerts": s.notify_alerts })
         }
         _ => json!({}),
     };
@@ -91,7 +92,7 @@ async fn request(p: &Panel, path: &str, body: &Value, timeout: u64) -> Res<Value
 }
 
 #[tauri::command]
-fn state() -> Value { let s = STORE.lock().clone(); json!({ "panels": s.panels.iter().map(|p| json!({ "id": p.id, "name": p.name, "addresses": p.addresses, "port": p.port, "good": p.good })).collect::<Vec<_>>(), "active": s.active, "notifyCrash": s.notify_crash, "notifyPlayers": s.notify_players, "notifyJobs": s.notify_jobs, "background": s.background }) }
+fn state() -> Value { let s = STORE.lock().clone(); json!({ "panels": s.panels.iter().map(|p| json!({ "id": p.id, "name": p.name, "addresses": p.addresses, "port": p.port, "good": p.good })).collect::<Vec<_>>(), "active": s.active, "notifyCrash": s.notify_crash, "notifyPlayers": s.notify_players, "notifyJobs": s.notify_jobs, "notifyAlerts": s.notify_alerts, "background": s.background }) }
 
 /// Привязка по коду из панели (QR-код или ручной ввод).
 #[tauri::command]
@@ -139,6 +140,7 @@ fn settings(patch: Value) -> Value {
     if let Some(v) = patch["notifyCrash"].as_bool() { s.notify_crash = v; }
     if let Some(v) = patch["notifyPlayers"].as_bool() { s.notify_players = v; }
     if let Some(v) = patch["notifyJobs"].as_bool() { s.notify_jobs = v; }
+    if let Some(v) = patch["notifyAlerts"].as_bool() { s.notify_alerts = v; }
     if let Some(v) = patch["background"].as_bool() { s.background = v; }
     let c = s.clone(); drop(s); save(&c);
     state()
@@ -184,12 +186,29 @@ fn events(types: String) {
 #[tauri::command]
 fn events_stop() { if let Some(h) = WS.lock().take() { h.abort(); } }
 
+/// Есть ли новая версия приложения в релизах на GitHub (APK прикладывается к релизу панели).
+#[tauri::command]
+async fn update_check() -> Res<Value> {
+    let cur = env!("CARGO_PKG_VERSION");
+    let r: Value = client(15).get("https://api.github.com/repos/TRUMEN228/mc-admin-panel/releases/latest")
+        .header("Accept", "application/vnd.github+json").send().await.map_err(|e| e.to_string())?
+        .json().await.map_err(|e| e.to_string())?;
+    let ver = |v: &str| v.split('.').map(|x| x.parse::<u32>().unwrap_or(0)).collect::<Vec<_>>();
+    for a in r["assets"].as_array().cloned().unwrap_or_default() {
+        let name = a["name"].as_str().unwrap_or("");
+        if let Some(v) = name.strip_prefix("MCAdminMobile-").and_then(|x| x.strip_suffix(".apk")) {
+            return Ok(json!({ "current": cur, "version": v, "available": ver(v) > ver(cur), "url": a["browser_download_url"], "size": a["size"], "page": r["html_url"] }));
+        }
+    }
+    Ok(json!({ "current": cur, "available": false }))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let b = tauri::Builder::default().plugin(tauri_plugin_opener::init());
     #[cfg(mobile)]
     let b = b.plugin(tauri_plugin_barcode_scanner::init());
-    b.invoke_handler(tauri::generate_handler![state, pair, select, remove, settings, call, events, events_stop])
+    b.invoke_handler(tauri::generate_handler![state, pair, select, remove, settings, call, events, events_stop, update_check])
         .setup(|app| {
             let _ = APP.set(app.handle().clone());
             let d = app.path().app_data_dir().unwrap_or_else(|_| std::env::temp_dir());

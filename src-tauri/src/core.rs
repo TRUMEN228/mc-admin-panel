@@ -94,7 +94,7 @@ fn defaults() -> Map<String, Value> {
         "webLan": false,
         "webPassword": "",
         "mobileEnabled": false,
-        "curseforgeKey": "",
+        "curseforgeKey": "", "backupMirrorDir": "", "webdavUrl": "", "webdavUser": "", "webdavPass": "",
         "autoUpdateCheck": true,
     });
     v.as_object().unwrap().clone()

@@ -4,3 +4,7 @@ src-tauri/gen/
 release/
 target/
 collector/src-tauri/gen/
+
+# Playwright
+/test-results/
+/playwright-report/

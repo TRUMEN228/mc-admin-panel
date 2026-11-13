@@ -23,6 +23,26 @@
   button.sm { height: 34px; font-size: 13.5px; }
   input, select { height: 44px; font-size: 16px; border-radius: 10px; }
   .srv { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+  .upd { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-soft); }
+  .upd > .ic { width: 22px; height: 22px; color: var(--accent-fg); }
+  .sug { position: absolute; left: 0; right: 56px; bottom: 52px; max-height: 40vh; overflow-y: auto; background: var(--card); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: var(--shadow-lg); z-index: 5; }
+  .sug div { padding: 9px 12px; border-bottom: 1px solid var(--border); } .sug div:last-child { border-bottom: 0; }
+  .sug b { font: 13px var(--mono); display: block; } .sug span { font-size: 12px; color: var(--text-3); }
+  .cmd { position: relative; }
+  .v.tps.ok { color: var(--accent-fg); } .v.tps.warn { color: var(--yellow); } .v.tps.bad { color: var(--red); }
+  .pst { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 8px; }
+  .pst img { width: 36px; height: 36px; border-radius: 8px; image-rendering: pixelated; }
+  .pst > .ic { color: var(--text-3); }
+  .mc-inv.m { padding: 10px; }
+  .mc-inv.m .mc-grid, .mc-inv.m .mc-eq.row { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 3px; }
+  .mc-inv.m .mc-slot { width: 100%; height: auto; aspect-ratio: 1; }
+  .mc-inv.m .mc-slot img { width: 70%; height: 70%; }
+  .mc-inv.m .mc-slot b { font-size: 11px; }
+  .mc-inv.m .mc-hud-row { gap: 4px; }
+  .mc-inv.m .mc-top { display: block; margin-bottom: 10px; }
+  .mc-inv.m .mc-bar { flex: 0 0 47%; gap: 0; }
+  .mc-inv.m .mc-bar img { width: 10%; height: auto; }
+  .mc-slot.sel { box-shadow: inset 0 0 0 2px var(--accent); }
   .s-ico { width: 44px; height: 44px; border-radius: 12px; overflow: hidden; flex-shrink: 0; display: grid; place-items: center; background: var(--card-2); color: var(--text-3); }
   .s-ico img { width: 100%; height: 100%; image-rendering: pixelated; }
   .srv .t { font: 600 16.5px var(--font-display); }
@@ -74,6 +94,8 @@
 <div class="scan"><p>Наведите камеру на QR-код в панели</p><div class="frame"></div><button onclick="scanCancel()">Отмена</button></div>
 <script src="js/icons.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/commands.js"></script>
+<script src="js/mcnames.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

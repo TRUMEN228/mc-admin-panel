@@ -1,9 +1,14 @@
 /* Темы оформления: hybrid (по умолчанию), light, glow, calm. Подключается после app.css и переопределяет токены. */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap");
+/* шрифты лежат в приложении — работают без интернета */
+@font-face { font-family: "Inter"; font-style: normal; font-display: swap; font-weight: 300 800; src: url("../fonts/inter-cyrillic-wght-normal.woff2") format("woff2"); unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116; }
+@font-face { font-family: "Inter"; font-style: normal; font-display: swap; font-weight: 300 800; src: url("../fonts/inter-latin-wght-normal.woff2") format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-display: swap; font-weight: 300 800; src: url("../fonts/space-grotesk-latin-wght-normal.woff2") format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "Manrope"; font-style: normal; font-display: swap; font-weight: 300 800; src: url("../fonts/manrope-cyrillic-wght-normal.woff2") format("woff2"); unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116; }
+@font-face { font-family: "Manrope"; font-style: normal; font-display: swap; font-weight: 300 800; src: url("../fonts/manrope-latin-wght-normal.woff2") format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
 
 :root {
   --font: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  --font-display: "Space Grotesk", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Inter", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
   --grad: var(--accent);
   --glow: transparent;
   --spot: rgba(255, 255, 255, .05);
@@ -137,8 +142,8 @@ button.primary:hover:not(:disabled) { background: var(--grad); filter: brightnes
 .srv-card:hover, .metric:hover { transform: translateY(var(--lift)); box-shadow: var(--shadow); }
 .srv-card:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); box-shadow: 0 18px 40px -22px var(--glow), var(--shadow); }
 .card, .metric { position: relative; }
-.card::before, .metric::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 0;
-  background: radial-gradient(380px circle at var(--mx, -400px) var(--my, -400px), var(--spot), transparent 45%); }
+/* подсветка — фоном самой карточки: в прокручиваемых панелях фон всегда занимает видимую область */
+.card, .metric { background-image: radial-gradient(380px circle at var(--mx, -400px) var(--my, -400px), var(--spot), transparent 45%); }
 .card > *, .metric > * { position: relative; z-index: 1; }
 .metric .spark { z-index: 0; }
 [data-theme="glow"] .card::after, [data-theme="glow"] .metric::after {
@@ -224,3 +229,87 @@ button.primary:hover:not(:disabled) { background: var(--grad); filter: brightnes
 .top-ico { width: 38px; height: 38px; padding: 0; border-radius: 11px; overflow: hidden; background: var(--card-2); flex-shrink: 0; }
 .top-ico .ic { width: 20px; height: 20px; }
 .top-ico:hover { box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* TPS и статистика игроков */
+.srv-card .stats3 { grid-template-columns: repeat(4, 1fr); }
+.grid.g5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1250px) { .grid.g5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.v.tps.ok { color: var(--accent-fg); } .v.tps.warn { color: var(--yellow); } .v.tps.bad { color: var(--red); }
+.ptable { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ptable th { text-align: left; font-weight: 500; color: var(--text-3); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.ptable td { padding: 7px 8px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.ptable tr:last-child td { border-bottom: 0; }
+.ptable tbody tr { transition: background .15s; } .ptable tbody tr:hover { background: var(--card-hover); }
+.ptable .head-img { width: 22px; height: 22px; border-radius: 5px; image-rendering: pixelated; }
+
+/* живые обновления (каждые 2 с) не должны заново проигрывать анимации появления */
+.no-anim > .metric, .no-anim > .card, .no-anim .bar > i, .no-anim .spark path { animation: none !important; stroke-dashoffset: 0 !important; }
+
+/* инвентарь игрока: объёмные слоты как в игре, цвета — из темы */
+.mc-modal { width: min(760px, 100%); }
+.mc-inv { --slot: 46px; padding: 14px; border-radius: 14px; background: color-mix(in srgb, var(--card-2) 85%, var(--accent) 4%);
+  box-shadow: inset 2px 2px 0 color-mix(in srgb, #fff 9%, transparent), inset -2px -2px 0 rgba(0, 0, 0, .35), var(--shadow-sm); user-select: none; }
+.mc-top { display: flex; gap: 10px; align-items: stretch; margin-bottom: 12px; }
+.mc-eq { display: flex; flex-direction: column; gap: 4px; justify-content: flex-end; }
+.mc-body { width: 110px; border-radius: 8px; display: grid; place-items: center; background: rgba(0, 0, 0, .35); box-shadow: inset 2px 2px 0 rgba(0, 0, 0, .4), inset -2px -2px 0 color-mix(in srgb, #fff 8%, transparent); }
+.mc-body img { height: 150px; image-rendering: pixelated; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, .5)); }
+.mc-side { flex: 1; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; min-width: 0; padding-left: 6px; }
+.mc-grid { display: grid; grid-template-columns: repeat(9, var(--slot)); gap: 3px; justify-content: start; }
+.mc-title { font: 600 12.5px var(--font); color: var(--text-2); margin: 14px 0 6px; }
+.mc-slot { position: relative; width: var(--slot); height: var(--slot); padding: 0; border-radius: 4px; display: grid; place-items: center; overflow: visible;
+  background: color-mix(in srgb, var(--card) 70%, #000 30%); border: 0;
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, .45), inset -2px -2px 0 color-mix(in srgb, #fff 10%, transparent); transition: background .12s, transform .12s; }
+.mc-slot:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 22%, var(--card) 78%); transform: none; }
+.mc-slot.dirty { box-shadow: inset 2px 2px 0 rgba(0, 0, 0, .45), inset -2px -2px 0 color-mix(in srgb, #fff 10%, transparent), 0 0 0 2px color-mix(in srgb, var(--yellow) 70%, transparent); }
+.mc-slot img { width: 34px; height: 34px; image-rendering: pixelated; object-fit: contain; pointer-events: none; }
+.mc-slot b { position: absolute; right: 3px; bottom: 0; font: 700 13px/1.2 var(--font); color: #fff; text-shadow: 2px 2px 0 #3f3f3f; pointer-events: none; }
+.mc-slot .dur { position: absolute; left: 6px; right: 6px; bottom: 4px; height: 3px; background: #000; }
+.mc-slot .dur::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--d) * 100%); background: hsl(calc(var(--d) * 120) 90% 50%); }
+.mc-slot.ench::after { content: ""; position: absolute; inset: 3px; border-radius: 2px; pointer-events: none; mix-blend-mode: screen;
+  background: linear-gradient(115deg, transparent 30%, rgba(180, 110, 255, .55) 50%, transparent 70%); background-size: 260% 100%; background-repeat: no-repeat; animation: mc-glint 2.8s linear infinite; }
+@keyframes mc-glint { from { background-position: 160% 0; } to { background-position: -110% 0; } }
+.mc-lbl { font-size: 9px; color: var(--text-3); text-align: center; line-height: 1.1; padding: 2px; }
+.inv-txt { font-size: 10px; color: var(--text-2); }
+/* полоски здоровья, голода и опыта */
+.mc-hud { margin: 10px 0 6px; }
+.mc-hud-row { display: flex; align-items: center; gap: 6px; }
+.mc-bar { display: flex; gap: 1px; }
+.mc-bar.rtl { flex-direction: row-reverse; }
+.mc-bar img { width: 18px; height: 18px; image-rendering: pixelated; cursor: pointer; transition: transform .1s; }
+.mc-bar img:hover { transform: scale(1.25); }
+.mc-num { font: 600 12px var(--font); color: var(--text-2); min-width: 22px; text-align: center; }
+.mc-xp { position: relative; margin-top: 6px; height: 22px; display: flex; align-items: center; }
+.mc-xp-bar { position: absolute; left: 0; right: 0; height: 6px; border-radius: 3px; background: rgba(0, 0, 0, .55); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .6); }
+.mc-xp-bar::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--p) * 100%); border-radius: 3px; background: linear-gradient(#b5f23b, #6ec51a); box-shadow: 0 0 8px rgba(128, 255, 32, .45); }
+.mc-lvl { position: relative; margin: 0 auto; width: 64px; height: 22px; padding: 0; text-align: center; font: 800 15px var(--font); color: #80ff20; background: transparent; border: 0; box-shadow: none;
+  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
+.mc-lvl:focus { box-shadow: 0 0 0 2px var(--accent-soft); border-radius: 6px; background: rgba(0, 0, 0, .35); }
+/* подсказка как в игре: тёмный фон и фиолетовая рамка, но в рамке — акцент темы */
+#inv-tip { position: fixed; left: 0; top: 0; z-index: 120; max-width: 320px; pointer-events: none; padding: 7px 10px; border-radius: 6px;
+  background: rgba(16, 4, 20, .94); border: 2px solid transparent; background-clip: padding-box; font: 13px/1.45 var(--font); color: #fff;
+  box-shadow: 0 0 0 1px rgba(16, 0, 16, .9), 0 10px 30px rgba(0, 0, 0, .5), inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, #5000ff); }
+.t-name { font-weight: 600; } .t-name.ench { color: #55ffff; } .t-name.custom { font-style: italic; }
+.t-ench { color: #aaaaaa; } .t-ench.curse { color: #ff5555; } .t-lore { color: #aa00aa; font-style: italic; } .t-blue { color: #5555ff; }
+.t-dim { color: #aaaaaa; } .t-id { color: #555555; font-size: 11.5px; margin-top: 2px; }
+.mc-tip-inline { padding: 8px 12px; border-radius: 8px; background: rgba(16, 4, 20, .92); color: #fff; font-size: 13px; line-height: 1.45; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, #5000ff); }
+[data-theme="light"] .mc-slot { background: #c6c6c6; box-shadow: inset 2px 2px 0 #373737, inset -2px -2px 0 #fff; }
+[data-theme="light"] .mc-inv { background: #e3e3e3; }
+@media (max-width: 760px) { .mc-inv { --slot: 34px; } .mc-slot img { width: 26px; height: 26px; } .mc-body { display: none; } }
+.mc-slot .mc-ghost { width: 32px; height: 32px; opacity: .35; filter: grayscale(1) brightness(1.6); }
+.mc-slot[draggable="true"] { cursor: grab; }
+.mc-slot.dragging { opacity: .35; }
+.mc-slot.over { background: color-mix(in srgb, var(--accent) 35%, var(--card) 65%); box-shadow: inset 0 0 0 2px var(--accent); }
+
+/* консоль: панель быстрых команд прокручивается внутри и не вылезает за рамку */
+.console-wrap { grid-template-rows: minmax(0, 1fr); }
+.console-wrap > * { min-height: 0; }
+.qc-panel { max-height: 100%; }
+
+.qc-panel::after, .dash-side .card::after { display: none; }
+
+/* переименованный предмет: бирка в углу слота */
+.mc-slot .mc-tag { position: absolute; left: 2px; top: 2px; width: 14px !important; height: 14px !important; image-rendering: pixelated; filter: drop-shadow(0 1px 1px #000); pointer-events: none; }
+.t-name.custom { font-style: italic; }
+
+/* невысокие экраны: окно игрока целиком, с кнопками */
+@media (max-height: 1000px) { .mc-inv { --slot: 38px; padding: 10px; } .mc-slot img { width: 28px; height: 28px; } .mc-body { width: 92px; } .mc-body img { height: 120px; } .mc-title { margin: 8px 0 4px; } .mc-hud { margin: 6px 0 4px; } }

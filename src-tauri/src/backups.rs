@@ -56,6 +56,7 @@ pub fn backup(id: &str, note: &str) -> Res<u64> {
         let s2 = s.clone();
         let r = tauri::async_runtime::spawn_blocking(move || make_zip(&s2, &note, &j)).await.unwrap_or_else(|e| Err(e.to_string()));
         if running && servers::is_running(&id) { let _ = servers::command(&id, "save-on").await; }
+        if let Ok(f) = &r { offsite(&s, f, &job).await; }
         match &r {
             Ok(f) => job.done(&format!("Создан {f}")),
             Err(e) => { job.fail(e); native::notify("Ошибка бэкапа", &format!("«{}»: {e}", s.name)); }
@@ -136,4 +137,62 @@ pub fn delete(id: &str, file: &str) -> Res<()> {
     std::fs::remove_file(backup_dir(&s).join(core::file_name(file))).ctx("Удаление")?;
     emit(json!({ "type": "backups", "id": id }));
     Ok(())
+}
+
+// ---------- копии бэкапов вне ПК: другой диск/папка облака и WebDAV ----------
+/// После создания бэкапа: копия в папку (другой диск, Google Drive, OneDrive…) и загрузка по WebDAV (Яндекс Диск, Nextcloud…).
+pub async fn offsite(s: &Server, file: &str, job: &Job) {
+    let src = backup_dir(s).join(file);
+    let mirror = core::set_str("backupMirrorDir");
+    if !mirror.trim().is_empty() {
+        let d = Path::new(mirror.trim()).join(core::safe_name(&s.name));
+        let r = std::fs::create_dir_all(&d).and_then(|_| std::fs::copy(&src, d.join(file)).map(|_| ()));
+        match r {
+            Ok(()) => {
+                let mut ex = list_files(&d);
+                while ex.len() > max_backups(s) { let o = ex.pop().unwrap(); let _ = std::fs::remove_file(d.join(o.0)); }
+                job.log(&format!("Копия сохранена: {}", d.display()));
+            }
+            Err(e) => { job.log(&format!("Не удалось скопировать в {}: {e}", d.display())); native::notify("Копия бэкапа не сохранена", &format!("«{}»: {e}", s.name)); }
+        }
+    }
+    if !core::set_str("webdavUrl").trim().is_empty() {
+        job.step(Some("Загрузка в облако…"), None);
+        match webdav_put(&s.name, &src, file).await {
+            Ok(()) => job.log("Загружено в облако (WebDAV)"),
+            Err(e) => { job.log(&format!("Облако: {e}")); native::notify("Бэкап не загружен в облако", &format!("«{}»: {e}", s.name)); }
+        }
+    }
+}
+fn dav() -> (String, String, String) {
+    (core::set_str("webdavUrl").trim().trim_end_matches('/').to_string(), core::set_str("webdavUser"), core::set_str("webdavPass"))
+}
+async fn dav_mkcol(url: &str, user: &str, pass: &str) -> Res<()> {
+    let r = mccore::http::client().request(reqwest::Method::from_bytes(b"MKCOL").unwrap(), url).basic_auth(user, Some(pass)).send().await.map_err(|e| format!("Сеть: {e}"))?;
+    match r.status().as_u16() { 200..=299 | 405 => Ok(()), 401 | 403 => Err("неверный логин или пароль".into()), c => Err(format!("сервер ответил {c}")) }
+}
+async fn webdav_put(server: &str, src: &Path, file: &str) -> Res<()> {
+    use futures_util::StreamExt;
+    let (base, user, pass) = dav();
+    let root = format!("{base}/MCAdminPanel");
+    let dir = format!("{root}/{}", urlencoding::encode(&core::safe_name(server)));
+    dav_mkcol(&root, &user, &pass).await?;
+    dav_mkcol(&dir, &user, &pass).await?;
+    let f = tokio::fs::File::open(src).await.ctx("Чтение бэкапа")?;
+    let len = f.metadata().await.map(|m| m.len()).unwrap_or(0);
+    let stream = futures_util::stream::unfold(f, |mut f| async move {
+        use tokio::io::AsyncReadExt;
+        let mut buf = vec![0u8; 1 << 20];
+        match f.read(&mut buf).await { Ok(0) => None, Ok(n) => { buf.truncate(n); Some((Ok::<_, std::io::Error>(buf), f)) } Err(e) => Some((Err(e), f)) }
+    }).boxed();
+    let r = mccore::http::client().put(format!("{dir}/{}", urlencoding::encode(file))).basic_auth(&user, Some(&pass))
+        .header("Content-Length", len).body(reqwest::Body::wrap_stream(stream)).send().await.map_err(|e| format!("Сеть: {e}"))?;
+    if r.status().is_success() { Ok(()) } else { Err(format!("сервер ответил {}", r.status().as_u16())) }
+}
+/// Проверка подключения к WebDAV из настроек.
+pub async fn webdav_test() -> Res<Value> {
+    let (base, user, pass) = dav();
+    if base.is_empty() { crate::bail!("Укажите адрес WebDAV"); }
+    dav_mkcol(&format!("{base}/MCAdminPanel"), &user, &pass).await?;
+    Ok(json!({ "ok": true }))
 }
