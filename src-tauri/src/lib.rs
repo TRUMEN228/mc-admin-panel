@@ -11,6 +11,7 @@ pub mod mobile;
 pub mod mods;
 pub mod native;
 pub mod network;
+pub mod pets;
 pub mod playerdata;
 pub mod servers;
 pub mod tools;

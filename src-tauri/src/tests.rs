@@ -237,3 +237,83 @@ async fn real_item_names() {
     println!("всего предметов: {}", all.len());
     if let Ok(out) = std::env::var("MCPANEL_TEST_DUMP") { std::fs::write(out, serde_json::to_string(&d).unwrap()).unwrap(); }
 }
+
+#[test]
+fn transfer_pets_in_region_file() {
+    use fastnbt::Value as N;
+    use std::collections::HashMap;
+    use std::io::Write;
+    let c = |v: Vec<(&str, N)>| N::Compound(v.into_iter().map(|(k, v)| (k.to_string(), v)).collect::<HashMap<_, _>>());
+    let (old, new) = (tools::offline_uuid("OldNick"), tools::offline_uuid("NewNick"));
+    let ob = crate::pets::uuid_bytes(&old).unwrap();
+    let ints: Vec<i32> = (0..4).map(|i| i32::from_be_bytes(ob[i * 4..i * 4 + 4].try_into().unwrap())).collect();
+    let (most, least) = (i64::from_be_bytes(ob[..8].try_into().unwrap()), i64::from_be_bytes(ob[8..].try_into().unwrap()));
+    // волк (1.16+), лошадь со старой строкой и кошка со старой парой Most/Least, плюс чужая собака
+    let wolf = c(vec![("id", N::String("minecraft:wolf".into())), ("Owner", N::IntArray(fastnbt::IntArray::new(ints.clone())))]);
+    let horse = c(vec![("id", N::String("minecraft:horse".into())), ("OwnerUUID", N::String(old.clone()))]);
+    let cat = c(vec![("id", N::String("minecraft:cat".into())), ("OwnerUUIDMost", N::Long(most)), ("OwnerUUIDLeast", N::Long(least))]);
+    let other = c(vec![("id", N::String("minecraft:wolf".into())), ("Owner", N::IntArray(fastnbt::IntArray::new(vec![1, 2, 3, 4])))]);
+    let chunk = c(vec![("DataVersion", N::Int(4671)), ("Entities", N::List(vec![wolf, horse, cat, other]))]);
+    let mut z = flate2::write::ZlibEncoder::new(vec![], flate2::Compression::default());
+    z.write_all(&fastnbt::to_bytes(&chunk).unwrap()).unwrap();
+    let data = z.finish().unwrap();
+    // регион: чанк 0 в секторе 2, ещё пустой чанк 1
+    let mut region = vec![0u8; 8192];
+    region[0..4].copy_from_slice(&[0, 0, 2, 1]);
+    let mut body = ((data.len() + 1) as u32).to_be_bytes().to_vec(); body.push(2); body.extend_from_slice(&data); body.resize(4096, 0);
+    region.extend_from_slice(&body);
+    let dir = std::env::temp_dir().join(format!("mcpanel-pets-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("world/entities")).unwrap();
+    let path = dir.join("world/entities/r.0.0.mca");
+    std::fs::write(&path, &region).unwrap();
+    let bak = dir.join("backup/entities/r.0.0.mca");
+    assert_eq!(crate::pets::process_region(&path, &old, &new, &bak).unwrap(), 3, "три питомца, чужой не тронут");
+    assert!(bak.exists(), "копия региона до изменений");
+    assert_eq!(crate::pets::process_region(&path, &old, &new, &bak).unwrap(), 0, "повторно — уже нечего менять");
+    // прочитать обратно и проверить владельцев
+    let raw = std::fs::read(&path).unwrap();
+    let off = (((raw[0] as usize) << 16) | ((raw[1] as usize) << 8) | raw[2] as usize) * 4096;
+    let len = u32::from_be_bytes(raw[off..off + 4].try_into().unwrap()) as usize;
+    let mut plain = vec![];
+    std::io::Read::read_to_end(&mut flate2::read::ZlibDecoder::new(&raw[off + 5..off + 4 + len]), &mut plain).unwrap();
+    let v: N = fastnbt::from_bytes(&plain).unwrap();
+    let s = format!("{v:?}");
+    assert!(s.contains(&new) && !s.contains(&old), "строковый UUID заменён");
+    let nb = crate::pets::uuid_bytes(&new).unwrap();
+    let nint = i32::from_be_bytes(nb[0..4].try_into().unwrap());
+    assert!(s.contains(&nint.to_string()), "IntArray заменён");
+    assert!(s.contains("[1, 2, 3, 4]"), "чужая собака не изменилась");
+    assert_eq!(crate::pets::entity_regions(&dir.join("world")).len(), 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Ручная проверка на КОПИИ мира: MCPANEL_TEST_WORLD_COPY=папка-копии MCPANEL_TEST_FROM=uuid cargo test real_pets -- --nocapture
+#[test]
+fn real_pets() {
+    let (Ok(world), Ok(from)) = (std::env::var("MCPANEL_TEST_WORLD_COPY"), std::env::var("MCPANEL_TEST_FROM")) else { return };
+    let to = tools::offline_uuid("SomeNewNick");
+    let w = std::path::PathBuf::from(world);
+    let regions = crate::pets::entity_regions(&w);
+    let count_chunks = |p: &std::path::Path| { let r = std::fs::read(p).unwrap(); if r.len() < 8192 { return 0; } (0..1024).filter(|i| r[i * 4 + 3] != 0).count() };
+    let (mut total, mut files) = (0, 0);
+    for r in &regions {
+        let before = count_chunks(r);
+        let n = crate::pets::process_region(r, &from, &to, &w.join("bak").join(r.file_name().unwrap())).unwrap();
+        if n > 0 {
+            files += 1; total += n;
+            // переписанный файл: те же чанки и каждый разбирается
+            assert_eq!(count_chunks(r), before);
+            let raw = std::fs::read(r).unwrap();
+            for i in 0..1024 {
+                let e = &raw[i * 4..i * 4 + 4]; if e[3] == 0 { continue; }
+                let off = (((e[0] as usize) << 16) | ((e[1] as usize) << 8) | e[2] as usize) * 4096;
+                let len = u32::from_be_bytes(raw[off..off + 4].try_into().unwrap()) as usize;
+                let mut plain = vec![];
+                std::io::Read::read_to_end(&mut flate2::read::ZlibDecoder::new(&raw[off + 5..off + 4 + len]), &mut plain).unwrap();
+                fastnbt::from_bytes::<fastnbt::Value>(&plain).unwrap();
+            }
+        }
+    }
+    println!("регионов: {} · изменено файлов: {files} · замен: {total}", regions.len());
+}

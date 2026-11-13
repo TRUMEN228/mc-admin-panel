@@ -171,5 +171,33 @@ pub async fn transfer_player(id: &str, from: &str, to: &str) -> Res<Value> {
             }
         }
     }
-    Ok(json!({ "from": old, "to": new, "online": online, "files": moved }))
+    // питомец на плече и животное, на котором сидит игрок, хранятся в его файле — там тоже меняем хозяина
+    let (ob, nb) = (crate::pets::uuid_bytes(&old).ok_or("Неверный UUID")?, crate::pets::uuid_bytes(&new).ok_or("Неверный UUID")?);
+    for w in &worlds {
+        let p = w.join("playerdata").join(format!("{new}.dat"));
+        if let Ok(mut v) = crate::playerdata::load(&p) {
+            if crate::pets::replace_uuid(&mut v, &ob, &nb, &old, &new) > 0 { crate::playerdata::store(&p, &v)?; }
+        }
+    }
+    // питомцы в мире: UUID хозяина в файлах сущностей (может занять несколько минут на большом мире)
+    let regions: Vec<(PathBuf, PathBuf)> = worlds.iter().flat_map(|w| {
+        let bak = w.join(format!("player-transfer-backup-{ts}"));
+        crate::pets::entity_regions(w).into_iter().map(move |r| { let b = bak.join(r.strip_prefix(w).unwrap_or(&r)); (r, b) })
+    }).collect();
+    let job = Job::new(format!("Перенос питомцев {from} → {to}"));
+    let (o2, n2, total) = (old.clone(), new.clone(), regions.len().max(1));
+    let pets = tauri::async_runtime::spawn_blocking(move || {
+        let (mut changed, mut files) = (0usize, 0usize);
+        for (i, (r, b)) in regions.iter().enumerate() {
+            match crate::pets::process_region(r, &o2, &n2, b) {
+                Ok(n) if n > 0 => { changed += n; files += 1; }
+                Ok(_) => {}
+                Err(e) => job.log(&format!("{}: {e}", r.display())),
+            }
+            job.progress((i + 1) as f64 / total as f64 * 100.0);
+        }
+        job.done(&format!("Питомцев и привязок перенесено: {changed}"));
+        (changed, files)
+    }).await.map_err(|e| e.to_string())?;
+    Ok(json!({ "from": old, "to": new, "online": online, "files": moved, "pets": pets.0, "petFiles": pets.1 }))
 }

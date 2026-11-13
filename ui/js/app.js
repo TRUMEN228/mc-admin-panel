@@ -1446,12 +1446,12 @@ async function transferPlayer(id) {
   if (s.status !== 'stopped') return alertDialog('Сначала остановите сервер — пока он работает, он перезапишет данные игроков.', 'Сервер работает', 'alert');
   const r = await formDialog({ title: 'Перенести данные на другой ник', icon: 'repeat', ok: 'Перенести', fields: [
     { key: 'from', label: 'Старый ник', placeholder: 'под которым остались вещи и достижения' },
-    { key: 'to', label: 'Новый ник', placeholder: 'на который перенести', hint: 'Переносятся инвентарь, эндер-сундук, позиция, опыт, достижения, статистика, данные модов, а также права оператора и белый список. Данные нового ника перед заменой сохраняются в резервную папку мира.' }] });
+    { key: 'to', label: 'Новый ник', placeholder: 'на который перенести', hint: 'Переносятся инвентарь, эндер-сундук, позиция, опыт, достижения, статистика, данные модов, прирученные питомцы (волки, кошки, попугаи, лошади…), а также права оператора и белый список. Данные нового ника перед заменой сохраняются в резервную папку мира.' }] });
   if (!r || !r.from.trim() || !r.to.trim()) return;
   if (!(await confirmDialog(`Вещи и прогресс «${r.from.trim()}» будут перенесены на «${r.to.trim()}». Текущие данные «${r.to.trim()}» заменятся (их копия сохранится).`, { title: 'Перенести?', ok: 'Перенести' }))) return;
   try {
     const t = await call('players.transfer', { id, from: r.from, to: r.to });
-    alertDialog(`Готово: перенесено файлов — ${t.files.length}.\n\n${t.files.slice(0, 12).join('\n')}${t.files.length > 12 ? '\n…' : ''}\n\nUUID: ${t.from} → ${t.to}${t.online ? '' : ' (офлайн-режим)'}`, 'Данные перенесены', 'check');
+    alertDialog(`Готово: перенесено файлов — ${t.files.length}, питомцев и привязок — ${t.pets || 0}.\n\n${t.files.slice(0, 12).join('\n')}${t.files.length > 12 ? '\n…' : ''}\n\nUUID: ${t.from} → ${t.to}${t.online ? '' : ' (офлайн-режим)'}`, 'Данные перенесены', 'check');
     feedPush('ok', 'repeat', `Данные ${r.from.trim()} перенесены на ${r.to.trim()} («${s.name}»)`);
   } catch (e) { alertDialog(e.message, 'Не удалось перенести', 'alert'); }
 }
